@@ -1,7 +1,7 @@
-import { API_BASE_URL } from './client'
+import { apiFetch } from './client'
 
 export async function listScenes() {
-  const res = await fetch(`${API_BASE_URL}/api/scenes`)
+  const res = await apiFetch('/api/scenes')
   if (!res.ok) throw new Error('Failed to load scenes')
   return res.json()
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Download, RotateCcw, Loader2, ImageOff } from 'lucide-react'
 import { listHeroModels } from '../api/heroModels'
+import { listScenes } from '../api/scenes'
 import { generateHero } from '../api/heroGenerations'
 import { resolveImageUrl } from '../api/client'
 import DesignDropzone from '../components/DesignDropzone'
@@ -19,28 +20,35 @@ function StepLabel({ n, children }) {
 
 export default function HeroGenerator() {
   const [models, setModels] = useState([])
+  const [scenes, setScenes] = useState([])
   const [loadingModels, setLoadingModels] = useState(true)
   const [selectedModelId, setSelectedModelId] = useState(null)
+  const [selectedSceneId, setSelectedSceneId] = useState(null)
   const [designFile, setDesignFile] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    listHeroModels()
-      .then(setModels)
-      .catch(() => setError('Failed to load phone models.'))
+    Promise.all([listHeroModels(), listScenes()])
+      .then(([modelsData, scenesData]) => {
+        setModels(modelsData)
+        setScenes(scenesData)
+        const defaultScene = scenesData.find((s) => s.isDefault) ?? scenesData[0]
+        if (defaultScene) setSelectedSceneId(defaultScene.id)
+      })
+      .catch(() => setError('Failed to load models/scenes.'))
       .finally(() => setLoadingModels(false))
   }, [])
 
-  const canGenerate = selectedModelId && designFile && !generating
+  const canGenerate = selectedModelId && selectedSceneId && designFile && !generating
 
   async function handleGenerate() {
     if (!canGenerate) return
     setGenerating(true)
     setError('')
     try {
-      const generation = await generateHero(selectedModelId, designFile)
+      const generation = await generateHero(selectedModelId, designFile, selectedSceneId)
       setResult(generation)
     } catch {
       setError('Generation failed. Try again.')
@@ -101,7 +109,7 @@ export default function HeroGenerator() {
     <div className="max-w-2xl mx-auto px-6 py-10">
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-zinc-900">Hero Shot Generator</h1>
-        <p className="text-sm text-zinc-500 mt-1">Pick a phone, upload your design, and generate a studio product photo.</p>
+        <p className="text-sm text-zinc-500 mt-1">Pick a phone, a background, upload your design, and generate a studio product photo.</p>
       </div>
 
       <div className="mb-8">
@@ -146,8 +154,41 @@ export default function HeroGenerator() {
         )}
       </div>
 
+      {scenes.length > 1 && (
+        <div className="mb-8">
+          <StepLabel n={2}>Choose a background</StepLabel>
+          <div className="grid grid-cols-3 gap-3">
+            {scenes.map((s) => {
+              const selected = s.id === selectedSceneId
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedSceneId(s.id)}
+                  className={`relative text-left rounded-xl border overflow-hidden transition-all ${
+                    selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
+                  }`}
+                >
+                  <div
+                    className="h-14"
+                    style={{ background: `linear-gradient(to bottom, ${s.backgroundTopColor}, ${s.backgroundBottomColor})` }}
+                  />
+                  <div className="p-2.5 bg-white">
+                    <div className="text-xs font-medium text-zinc-900 truncate">{s.name}</div>
+                  </div>
+                  {selected && (
+                    <div className="absolute top-2 right-2 bg-indigo-600 rounded-full p-0.5">
+                      <Check className="w-3 h-3 text-white" />
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="mb-8">
-        <StepLabel n={2}>Upload your design</StepLabel>
+        <StepLabel n={scenes.length > 1 ? 3 : 2}>Upload your design</StepLabel>
         <DesignDropzone file={designFile} onChange={setDesignFile} />
       </div>
 

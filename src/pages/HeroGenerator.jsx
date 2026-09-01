@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Download, RotateCcw, Loader2, ImageOff, Search } from 'lucide-react'
+import { Check, Download, RotateCcw, RotateCw, Loader2, ImageOff, Search, Smartphone } from 'lucide-react'
 import { listHeroModels } from '../api/heroModels'
 import { listScenes } from '../api/scenes'
 import { generateHero } from '../api/heroGenerations'
 import { resolveImageUrl } from '../api/client'
 import DesignDropzone from '../components/DesignDropzone'
 import Button from '../components/Button'
+
+// Small, pre-approved set — a wider turn showed a shadow gap in testing, so this isn't a free
+// slider, just a few angles confirmed to look clean.
+const ANGLE_PRESETS = [
+  { label: 'Straight-on', yaw: 0, icon: Smartphone },
+  { label: 'Turn left', yaw: -12, icon: RotateCcw },
+  { label: 'Turn right', yaw: 12, icon: RotateCw },
+]
 
 function StepLabel({ n, children }) {
   return (
@@ -27,6 +35,7 @@ export default function HeroGenerator() {
   const [selectedSceneId, setSelectedSceneId] = useState(null)
   const [backgroundMode, setBackgroundMode] = useState('preset') // 'preset' | 'upload'
   const [customBackgroundFile, setCustomBackgroundFile] = useState(null)
+  const [selectedYaw, setSelectedYaw] = useState(0)
   const [designFile, setDesignFile] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [result, setResult] = useState(null)
@@ -67,7 +76,8 @@ export default function HeroGenerator() {
         selectedModelId,
         designFile,
         backgroundMode === 'upload' ? null : selectedSceneId,
-        backgroundMode === 'upload' ? customBackgroundFile : null
+        backgroundMode === 'upload' ? customBackgroundFile : null,
+        selectedYaw
       )
       setResult(generation)
     } catch {
@@ -126,6 +136,12 @@ export default function HeroGenerator() {
     )
   }
 
+  let stepCounter = 0
+  const phoneStep = ++stepCounter
+  const backgroundStep = scenes.length > 1 ? ++stepCounter : null
+  const angleStep = ++stepCounter
+  const designStep = ++stepCounter
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       <div className="mb-8">
@@ -134,7 +150,7 @@ export default function HeroGenerator() {
       </div>
 
       <div className="mb-8">
-        <StepLabel n={1}>Choose a phone</StepLabel>
+        <StepLabel n={phoneStep}>Choose a phone</StepLabel>
         {loadingModels ? (
           <div className="flex items-center gap-2 text-zinc-400 text-sm py-6">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading models...
@@ -196,7 +212,7 @@ export default function HeroGenerator() {
 
       {scenes.length > 1 && (
         <div className="mb-8">
-          <StepLabel n={2}>Choose a background</StepLabel>
+          <StepLabel n={backgroundStep}>Choose a background</StepLabel>
 
           <div className="inline-flex rounded-lg border border-zinc-200 p-0.5 mb-3 bg-zinc-50">
             <button
@@ -262,7 +278,28 @@ export default function HeroGenerator() {
       )}
 
       <div className="mb-8">
-        <StepLabel n={scenes.length > 1 ? 3 : 2}>Upload your design</StepLabel>
+        <StepLabel n={angleStep}>Choose an angle</StepLabel>
+        <div className="flex gap-3">
+          {ANGLE_PRESETS.map(({ label, yaw, icon: Icon }) => {
+            const selected = yaw === selectedYaw
+            return (
+              <button
+                key={label}
+                onClick={() => setSelectedYaw(yaw)}
+                className={`flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border transition-all ${
+                  selected ? 'border-indigo-500 ring-2 ring-indigo-500/20 bg-indigo-50/40' : 'border-zinc-200 hover:border-zinc-300'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${selected ? 'text-indigo-600' : 'text-zinc-400'}`} />
+                <span className={`text-xs font-medium ${selected ? 'text-zinc-900' : 'text-zinc-500'}`}>{label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mb-8">
+        <StepLabel n={designStep}>Upload your design</StepLabel>
         <DesignDropzone file={designFile} onChange={setDesignFile} />
       </div>
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Trash2, Smartphone, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Trash2, Smartphone, Loader2, Search } from 'lucide-react'
 import { listHeroModels, createHeroModel, deleteHeroModel } from '../../api/heroModels'
 import { resolveImageUrl } from '../../api/client'
 import ImageUploadField from '../../components/ImageUploadField'
@@ -21,6 +21,7 @@ export default function HeroModelManager() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     refresh()
@@ -73,6 +74,12 @@ export default function HeroModelManager() {
     }
   }
 
+  const filteredModels = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return models
+    return models.filter((m) => `${m.phoneName} ${m.caseType}`.toLowerCase().includes(q))
+  }, [models, query])
+
   async function handleDelete(id) {
     if (!confirm('Delete this model? This cannot be undone.')) return
     setDeletingId(id)
@@ -87,7 +94,7 @@ export default function HeroModelManager() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-zinc-900">Model Manager</h1>
         <p className="text-sm text-zinc-500 mt-1">
@@ -95,8 +102,8 @@ export default function HeroModelManager() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white border border-zinc-200 rounded-xl p-6 mb-10 flex flex-col gap-6 shadow-sm">
-        <div className="grid grid-cols-2 gap-4">
+      <form onSubmit={handleSubmit} className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 mb-10 flex flex-col gap-6 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-zinc-600">Phone name</label>
             <input
@@ -119,7 +126,7 @@ export default function HeroModelManager() {
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <ImageUploadField label="Base" value={form.baseImageUrl} onChange={(v) => updateField('baseImageUrl', v)} />
           <ImageUploadField label="Design mask" value={form.designMaskImageUrl} onChange={(v) => updateField('designMaskImageUrl', v)} />
           <ImageUploadField label="Camera mask" value={form.cameraMaskImageUrl} onChange={(v) => updateField('cameraMaskImageUrl', v)} />
@@ -135,7 +142,19 @@ export default function HeroModelManager() {
         </div>
       </form>
 
-      <h2 className="text-sm font-medium text-zinc-600 mb-3">Existing models</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
+        <h2 className="text-sm font-medium text-zinc-600 shrink-0">Existing models</h2>
+        <div className="relative w-full sm:w-64">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by phone or case type..."
+            className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+          />
+        </div>
+      </div>
       {loading ? (
         <div className="flex items-center gap-2 text-zinc-400 text-sm py-8">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading...
@@ -145,9 +164,14 @@ export default function HeroModelManager() {
           <Smartphone className="w-6 h-6" />
           <p className="text-sm">No models yet — add one above.</p>
         </div>
+      ) : filteredModels.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 text-zinc-400 py-16 border border-dashed border-zinc-200 rounded-xl">
+          <Search className="w-6 h-6" />
+          <p className="text-sm">No models match "{query}".</p>
+        </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
-          {models.map((m) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredModels.map((m) => (
             <div key={m.id} className="group bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm">
               <div className="aspect-square bg-zinc-50 flex items-center justify-center p-4">
                 <img src={resolveImageUrl(m.baseImageUrl)} alt="" className="max-w-full max-h-full object-contain" />

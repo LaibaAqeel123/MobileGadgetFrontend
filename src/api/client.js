@@ -2,7 +2,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localho
 
 export function resolveImageUrl(url) {
   if (!url) return url
-  return url.startsWith('http') ? url : `${API_BASE_URL}${url}`
+  return url.startsWith('http') ? url : `${API_BASE_URL}/api${url}`
 }
 
 // Access token lives in memory only (never localStorage) — cleared on refresh/tab close.

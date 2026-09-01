@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Check, Download, RotateCcw, Loader2, ImageOff } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, Download, RotateCcw, Loader2, ImageOff, Search } from 'lucide-react'
 import { listHeroModels } from '../api/heroModels'
 import { listScenes } from '../api/scenes'
 import { generateHero } from '../api/heroGenerations'
@@ -22,6 +22,7 @@ export default function HeroGenerator() {
   const [models, setModels] = useState([])
   const [scenes, setScenes] = useState([])
   const [loadingModels, setLoadingModels] = useState(true)
+  const [modelQuery, setModelQuery] = useState('')
   const [selectedModelId, setSelectedModelId] = useState(null)
   const [selectedSceneId, setSelectedSceneId] = useState(null)
   const [designFile, setDesignFile] = useState(null)
@@ -42,6 +43,14 @@ export default function HeroGenerator() {
   }, [])
 
   const canGenerate = selectedModelId && selectedSceneId && designFile && !generating
+
+  const filteredModels = useMemo(() => {
+    const q = modelQuery.trim().toLowerCase()
+    if (!q) return models
+    return models.filter((m) =>
+      `${m.phoneName} ${m.caseType}`.toLowerCase().includes(q)
+    )
+  }, [models, modelQuery])
 
   async function handleGenerate() {
     if (!canGenerate) return
@@ -77,7 +86,7 @@ export default function HeroGenerator() {
   if (result) {
     const selectedModel = models.find((m) => m.id === selectedModelId)
     return (
-      <div className="max-w-2xl mx-auto px-6 py-10">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-zinc-900">Your hero photo is ready</h1>
           <p className="text-sm text-zinc-500 mt-1">
@@ -106,7 +115,7 @@ export default function HeroGenerator() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-zinc-900">Hero Shot Generator</h1>
         <p className="text-sm text-zinc-500 mt-1">Pick a phone, a background, upload your design, and generate a studio product photo.</p>
@@ -124,40 +133,59 @@ export default function HeroGenerator() {
             <p className="text-sm">No phone models yet — add one in Admin first.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {models.map((m) => {
-              const selected = m.id === selectedModelId
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedModelId(m.id)}
-                  className={`relative text-left rounded-xl border overflow-hidden transition-all ${
-                    selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
-                  }`}
-                >
-                  <div className="aspect-square bg-zinc-50 flex items-center justify-center p-3">
-                    <img src={resolveImageUrl(m.baseImageUrl)} alt="" className="max-w-full max-h-full object-contain" />
-                  </div>
-                  <div className="p-2.5 bg-white">
-                    <div className="text-xs font-medium text-zinc-900 truncate">{m.phoneName}</div>
-                    <div className="text-xs text-zinc-500 truncate">{m.caseType}</div>
-                  </div>
-                  {selected && (
-                    <div className="absolute top-2 right-2 bg-indigo-600 rounded-full p-0.5">
-                      <Check className="w-3 h-3 text-white" />
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <>
+            <div className="relative mb-3">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={modelQuery}
+                onChange={(e) => setModelQuery(e.target.value)}
+                placeholder="Search by phone or case type..."
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+            </div>
+            {filteredModels.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 text-zinc-400 py-10 border border-dashed border-zinc-200 rounded-xl">
+                <Search className="w-5 h-5" />
+                <p className="text-sm">No phone models match "{modelQuery}".</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {filteredModels.map((m) => {
+                  const selected = m.id === selectedModelId
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedModelId(m.id)}
+                      className={`relative text-left rounded-xl border overflow-hidden transition-all ${
+                        selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      <div className="aspect-square bg-zinc-50 flex items-center justify-center p-3">
+                        <img src={resolveImageUrl(m.baseImageUrl)} alt="" className="max-w-full max-h-full object-contain" />
+                      </div>
+                      <div className="p-2.5 bg-white">
+                        <div className="text-xs font-medium text-zinc-900 truncate">{m.phoneName}</div>
+                        <div className="text-xs text-zinc-500 truncate">{m.caseType}</div>
+                      </div>
+                      {selected && (
+                        <div className="absolute top-2 right-2 bg-indigo-600 rounded-full p-0.5">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {scenes.length > 1 && (
         <div className="mb-8">
           <StepLabel n={2}>Choose a background</StepLabel>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {scenes.map((s) => {
               const selected = s.id === selectedSceneId
               return (

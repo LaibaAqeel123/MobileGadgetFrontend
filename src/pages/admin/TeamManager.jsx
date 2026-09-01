@@ -45,14 +45,14 @@ export default function TeamManager() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10">
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-zinc-900">Team</h1>
         <p className="text-sm text-zinc-500 mt-1">Give team members access — Admin can manage models, Generator can only generate hero shots.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white border border-zinc-200 rounded-xl p-6 mb-8 flex flex-col gap-4 shadow-sm">
-        <div className="grid grid-cols-3 gap-4">
+      <form onSubmit={handleSubmit} className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 mb-8 flex flex-col gap-4 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="col-span-1 flex flex-col gap-1.5">
             <label className="text-xs font-medium text-zinc-600">Email</label>
             <input
@@ -64,7 +64,7 @@ export default function TeamManager() {
             />
           </div>
           <div className="col-span-1 flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-zinc-600">Temporary password</label>
+            <label className="text-xs font-medium text-zinc-600">Password</label>
             <input
               type="text"
               required
@@ -102,9 +102,9 @@ export default function TeamManager() {
       ) : (
         <div className="flex flex-col gap-2">
           {users.map((u) => (
-            <div key={u.id} className="flex items-center justify-between border border-zinc-200 rounded-lg px-4 py-3 bg-white">
-              <span className="text-sm text-zinc-900">{u.email}</span>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${u.role === 'Admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-zinc-100 text-zinc-600'}`}>
+            <div key={u.id} className="flex items-center justify-between gap-3 border border-zinc-200 rounded-lg px-4 py-3 bg-white">
+              <span className="text-sm text-zinc-900 truncate min-w-0">{u.email}</span>
+              <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${u.role === 'Admin' ? 'bg-indigo-50 text-indigo-700' : 'bg-zinc-100 text-zinc-600'}`}>
                 {u.role}
               </span>
             </div>

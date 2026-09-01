@@ -31,7 +31,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-56px)] flex items-center justify-center px-6">
+    <div className="min-h-[calc(100vh-56px)] flex items-center justify-center px-4 sm:px-6">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-2 justify-center mb-6 text-zinc-900 font-semibold">
           <Sparkles className="w-5 h-5 text-indigo-600" />

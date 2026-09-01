@@ -25,6 +25,8 @@ export default function HeroGenerator() {
   const [modelQuery, setModelQuery] = useState('')
   const [selectedModelId, setSelectedModelId] = useState(null)
   const [selectedSceneId, setSelectedSceneId] = useState(null)
+  const [backgroundMode, setBackgroundMode] = useState('preset') // 'preset' | 'upload'
+  const [customBackgroundFile, setCustomBackgroundFile] = useState(null)
   const [designFile, setDesignFile] = useState(null)
   const [generating, setGenerating] = useState(false)
   const [result, setResult] = useState(null)
@@ -42,7 +44,11 @@ export default function HeroGenerator() {
       .finally(() => setLoadingModels(false))
   }, [])
 
-  const canGenerate = selectedModelId && selectedSceneId && designFile && !generating
+  const canGenerate =
+    selectedModelId &&
+    designFile &&
+    !generating &&
+    (backgroundMode === 'preset' ? selectedSceneId : customBackgroundFile)
 
   const filteredModels = useMemo(() => {
     const q = modelQuery.trim().toLowerCase()
@@ -57,7 +63,12 @@ export default function HeroGenerator() {
     setGenerating(true)
     setError('')
     try {
-      const generation = await generateHero(selectedModelId, designFile, selectedSceneId)
+      const generation = await generateHero(
+        selectedModelId,
+        designFile,
+        backgroundMode === 'upload' ? null : selectedSceneId,
+        backgroundMode === 'upload' ? customBackgroundFile : null
+      )
       setResult(generation)
     } catch {
       setError('Generation failed. Try again.')
@@ -81,6 +92,7 @@ export default function HeroGenerator() {
   function handleReset() {
     setResult(null)
     setDesignFile(null)
+    setCustomBackgroundFile(null)
   }
 
   if (result) {
@@ -185,33 +197,67 @@ export default function HeroGenerator() {
       {scenes.length > 1 && (
         <div className="mb-8">
           <StepLabel n={2}>Choose a background</StepLabel>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {scenes.map((s) => {
-              const selected = s.id === selectedSceneId
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => setSelectedSceneId(s.id)}
-                  className={`relative text-left rounded-xl border overflow-hidden transition-all ${
-                    selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
-                  }`}
-                >
-                  <div
-                    className="h-14"
-                    style={{ background: `linear-gradient(to bottom, ${s.backgroundTopColor}, ${s.backgroundBottomColor})` }}
-                  />
-                  <div className="p-2.5 bg-white">
-                    <div className="text-xs font-medium text-zinc-900 truncate">{s.name}</div>
-                  </div>
-                  {selected && (
-                    <div className="absolute top-2 right-2 bg-indigo-600 rounded-full p-0.5">
-                      <Check className="w-3 h-3 text-white" />
-                    </div>
-                  )}
-                </button>
-              )
-            })}
+
+          <div className="inline-flex rounded-lg border border-zinc-200 p-0.5 mb-3 bg-zinc-50">
+            <button
+              onClick={() => setBackgroundMode('preset')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                backgroundMode === 'preset' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              Presets
+            </button>
+            <button
+              onClick={() => setBackgroundMode('upload')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                backgroundMode === 'upload' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              Upload your own
+            </button>
           </div>
+
+          {backgroundMode === 'preset' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {scenes.map((s) => {
+                const selected = s.id === selectedSceneId
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedSceneId(s.id)}
+                    className={`relative text-left rounded-xl border overflow-hidden transition-all ${
+                      selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
+                    }`}
+                  >
+                    {s.backgroundImageUrl ? (
+                      <img src={resolveImageUrl(s.backgroundImageUrl)} alt="" className="h-14 w-full object-cover" />
+                    ) : (
+                      <div
+                        className="h-14"
+                        style={{ background: `linear-gradient(to bottom, ${s.backgroundTopColor}, ${s.backgroundBottomColor})` }}
+                      />
+                    )}
+                    <div className="p-2.5 bg-white">
+                      <div className="text-xs font-medium text-zinc-900 truncate">{s.name}</div>
+                    </div>
+                    {selected && (
+                      <div className="absolute top-2 right-2 bg-indigo-600 rounded-full p-0.5">
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <DesignDropzone
+              file={customBackgroundFile}
+              onChange={setCustomBackgroundFile}
+              label="Click or drag a background photo here"
+              hint="PNG, JPG, or WebP — any size, we'll fit it to frame"
+              previewAlt="Your background"
+            />
+          )}
         </div>
       )}
 

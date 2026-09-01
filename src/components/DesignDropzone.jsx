@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Upload, X } from 'lucide-react'
 
-export default function DesignDropzone({ file, onChange }) {
+export default function DesignDropzone({ file, onChange, label = 'Click or drag a design image here', hint = 'PNG, JPG, or WebP', previewAlt = 'Your design' }) {
   const inputId = useId()
   const [previewUrl, setPreviewUrl] = useState(null)
 
@@ -29,10 +29,10 @@ export default function DesignDropzone({ file, onChange }) {
   if (previewUrl) {
     return (
       <div className="relative rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 aspect-video flex items-center justify-center">
-        <img src={previewUrl} alt="Your design" className="max-w-full max-h-full object-contain" />
+        <img src={previewUrl} alt={previewAlt} className="max-w-full max-h-full object-contain" />
         <button
           onClick={() => onChange(null)}
-          aria-label="Remove design"
+          aria-label="Remove image"
           className="absolute top-2 right-2 bg-white/90 hover:bg-white rounded-full p-1.5 shadow-sm text-zinc-500 hover:text-zinc-900"
         >
           <X className="w-4 h-4" />
@@ -49,8 +49,8 @@ export default function DesignDropzone({ file, onChange }) {
       className="flex flex-col items-center justify-center gap-2 aspect-video rounded-xl border-2 border-dashed border-zinc-300 hover:border-indigo-400 hover:bg-indigo-50/40 cursor-pointer transition-colors"
     >
       <Upload className="w-6 h-6 text-zinc-400" />
-      <span className="text-sm text-zinc-500">Click or drag a design image here</span>
-      <span className="text-xs text-zinc-400">PNG, JPG, or WebP</span>
+      <span className="text-sm text-zinc-500">{label}</span>
+      <span className="text-xs text-zinc-400">{hint}</span>
       <input id={inputId} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleSelect} className="sr-only" />
     </label>
   )

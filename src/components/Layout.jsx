@@ -36,6 +36,9 @@ export default function Layout({ children }) {
                     <NavLink to="/admin" end className={navLinkClass}>
                       Admin
                     </NavLink>
+                    <NavLink to="/admin/backgrounds" className={navLinkClass}>
+                      Backgrounds
+                    </NavLink>
                     <NavLink to="/admin/team" className={navLinkClass}>
                       Team
                     </NavLink>

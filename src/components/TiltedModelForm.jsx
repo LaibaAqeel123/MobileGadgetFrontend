@@ -20,6 +20,7 @@ export default function TiltedModelForm({ onReady }) {
   const [testImageUrl, setTestImageUrl] = useState(null)
   const [roundR, setRoundR] = useState(18)
   const [padPx, setPadPx] = useState(20)
+  const [coverCameraPlate, setCoverCameraPlate] = useState(false)
   const [error, setError] = useState('')
 
   async function handlePhotoSelect(e) {
@@ -30,14 +31,14 @@ export default function TiltedModelForm({ onReady }) {
     setPreview(null)
     setTestImageUrl(null)
     onReady(null)
-    await runDetect(file, roundR, padPx)
+    await runDetect(file, roundR, padPx, coverCameraPlate)
   }
 
-  async function runDetect(file, r, p) {
+  async function runDetect(file, r, p, coverPlate) {
     setDetecting(true)
     setError('')
     try {
-      const result = await detectTilted(file, r, p)
+      const result = await detectTilted(file, r, p, coverPlate)
       setPreview(result)
       onReady({
         baseImageUrl: result.baseImageUrl,
@@ -48,6 +49,7 @@ export default function TiltedModelForm({ onReady }) {
         caseBboxJson: result.caseBboxJson,
         cameraRoundR: r,
         cameraPadPx: p,
+        coverCameraPlate: coverPlate,
       })
       await runPreviewRender(result)
     } catch {
@@ -73,7 +75,7 @@ export default function TiltedModelForm({ onReady }) {
   }
 
   function handleRedetect() {
-    if (photoFile && !detecting) runDetect(photoFile, roundR, padPx)
+    if (photoFile && !detecting) runDetect(photoFile, roundR, padPx, coverCameraPlate)
   }
 
   return (
@@ -132,6 +134,23 @@ export default function TiltedModelForm({ onReady }) {
               <input type="range" min="4" max="40" value={padPx} onChange={(e) => setPadPx(Number(e.target.value))} />
             </div>
           </div>
+
+          <label className="flex items-start gap-2 text-xs text-zinc-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={coverCameraPlate}
+              onChange={(e) => setCoverCameraPlate(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-zinc-700">Print design on the camera plate too</span>
+              <br />
+              Off (default): the raised area around the lenses stays its real photographed color — correct when that
+              trim is a separate material/color from the body. On: only the lens/flash holes themselves stay
+              unprinted — use this for a one-piece case molded in a single uniform color, like this photo.
+            </span>
+          </label>
+
           <div>
             <Button type="button" variant="secondary" onClick={handleRedetect} disabled={detecting}>
               <Wand2 className="w-4 h-4" /> Re-detect with these settings

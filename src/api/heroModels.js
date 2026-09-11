@@ -38,11 +38,12 @@ export const POSE_TILTED = 1
 
 /// Runs auto-detection on an admin-uploaded tilted photo. Saves the photo + 3 mask images (so
 /// they're ready to preview/save) but creates no HeroModel yet -- that's a separate save step.
-export async function detectTilted(photoFile, cameraRoundR, cameraPadPx) {
+export async function detectTilted(photoFile, cameraRoundR, cameraPadPx, coverCameraPlate) {
   const formData = new FormData()
   formData.append('photo', photoFile)
   if (cameraRoundR != null) formData.append('cameraRoundR', cameraRoundR)
   if (cameraPadPx != null) formData.append('cameraPadPx', cameraPadPx)
+  formData.append('coverCameraPlate', coverCameraPlate ? 'true' : 'false')
 
   const res = await apiFetch('/api/heromodels/detect-tilted', { method: 'POST', body: formData })
   if (!res.ok) throw new Error('Detection failed')

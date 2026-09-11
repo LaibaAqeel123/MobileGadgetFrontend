@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Download, RotateCcw, RotateCw, Loader2, ImageOff, Search, Smartphone } from 'lucide-react'
-import { listHeroModels } from '../api/heroModels'
+import { listHeroModels, POSE_TILTED } from '../api/heroModels'
 import { listScenes } from '../api/scenes'
 import { generateHero } from '../api/heroGenerations'
 import { resolveImageUrl } from '../api/client'
@@ -33,7 +33,7 @@ export default function HeroGenerator() {
   const [modelQuery, setModelQuery] = useState('')
   const [selectedModelId, setSelectedModelId] = useState(null)
   const [selectedSceneId, setSelectedSceneId] = useState(null)
-  const [backgroundMode, setBackgroundMode] = useState('preset') // 'preset' | 'upload'
+  const [backgroundMode, setBackgroundMode] = useState('preset') // 'original' | 'preset' | 'upload'
   const [customBackgroundFile, setCustomBackgroundFile] = useState(null)
   const [selectedYaw, setSelectedYaw] = useState(0)
   const [designFile, setDesignFile] = useState(null)
@@ -53,11 +53,33 @@ export default function HeroGenerator() {
       .finally(() => setLoadingModels(false))
   }, [])
 
+  const selectedModel = models.find((m) => m.id === selectedModelId)
+  const isTilted = selectedModel?.poseType === POSE_TILTED
+
+  // Default to each pose's own best starting choice when the selected model changes -- Tilted's
+  // own real background usually looks best (see effectiveBackgroundMode below), Straight has no
+  // such option so it falls back to picking a preset.
+  useEffect(() => {
+    if (!selectedModel) return
+    setBackgroundMode(isTilted ? 'original' : 'preset')
+  }, [selectedModelId])
+
+  // Tilted's own real photo background is a valid, no-selection-needed choice ("original") --
+  // Straight always needs an actual scene, so its background step stays required exactly as
+  // before. Switching which model is selected can change whether the CURRENT mode is still valid
+  // (e.g. 'original' selected, then switching to a Straight model), so re-derive per render
+  // rather than trust stale state.
+  const effectiveBackgroundMode = isTilted ? backgroundMode : backgroundMode === 'original' ? 'preset' : backgroundMode
+
   const canGenerate =
     selectedModelId &&
     designFile &&
     !generating &&
-    (backgroundMode === 'preset' ? selectedSceneId : customBackgroundFile)
+    (effectiveBackgroundMode === 'original'
+      ? true
+      : effectiveBackgroundMode === 'preset'
+        ? selectedSceneId
+        : customBackgroundFile)
 
   const filteredModels = useMemo(() => {
     const q = modelQuery.trim().toLowerCase()
@@ -75,9 +97,9 @@ export default function HeroGenerator() {
       const generation = await generateHero(
         selectedModelId,
         designFile,
-        backgroundMode === 'upload' ? null : selectedSceneId,
-        backgroundMode === 'upload' ? customBackgroundFile : null,
-        selectedYaw
+        effectiveBackgroundMode === 'preset' ? selectedSceneId : null,
+        effectiveBackgroundMode === 'upload' ? customBackgroundFile : null,
+        isTilted ? null : selectedYaw
       )
       setResult(generation)
     } catch {
@@ -106,7 +128,6 @@ export default function HeroGenerator() {
   }
 
   if (result) {
-    const selectedModel = models.find((m) => m.id === selectedModelId)
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
         <div className="mb-6">
@@ -136,10 +157,16 @@ export default function HeroGenerator() {
     )
   }
 
+  // Tilted has no synthetic camera, so "angle" doesn't apply -- but its own real photo background
+  // is always a valid, no-selection-needed choice, so its background step shows regardless of how
+  // many Scenes exist (Straight only shows this step once there's an actual choice to make).
+  const showBackgroundStep = isTilted || scenes.length > 1
+  const showAngleStep = !isTilted
+
   let stepCounter = 0
   const phoneStep = ++stepCounter
-  const backgroundStep = scenes.length > 1 ? ++stepCounter : null
-  const angleStep = ++stepCounter
+  const backgroundStep = showBackgroundStep ? ++stepCounter : null
+  const angleStep = showAngleStep ? ++stepCounter : null
   const designStep = ++stepCounter
 
   return (
@@ -210,15 +237,25 @@ export default function HeroGenerator() {
         )}
       </div>
 
-      {scenes.length > 1 && (
+      {showBackgroundStep && (
         <div className="mb-8">
           <StepLabel n={backgroundStep}>Choose a background</StepLabel>
 
           <div className="inline-flex rounded-lg border border-zinc-200 p-0.5 mb-3 bg-zinc-50">
+            {isTilted && (
+              <button
+                onClick={() => setBackgroundMode('original')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  effectiveBackgroundMode === 'original' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                Original photo
+              </button>
+            )}
             <button
               onClick={() => setBackgroundMode('preset')}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                backgroundMode === 'preset' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+                effectiveBackgroundMode === 'preset' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
               Presets
@@ -226,14 +263,16 @@ export default function HeroGenerator() {
             <button
               onClick={() => setBackgroundMode('upload')}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                backgroundMode === 'upload' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+                effectiveBackgroundMode === 'upload' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
               Upload your own
             </button>
           </div>
 
-          {backgroundMode === 'preset' ? (
+          {effectiveBackgroundMode === 'original' ? (
+            <p className="text-xs text-zinc-500">Keeps this case's own real photographed background — usually the most realistic choice.</p>
+          ) : effectiveBackgroundMode === 'preset' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {scenes.map((s) => {
                 const selected = s.id === selectedSceneId
@@ -277,6 +316,7 @@ export default function HeroGenerator() {
         </div>
       )}
 
+      {showAngleStep && (
       <div className="mb-8">
         <StepLabel n={angleStep}>Choose an angle</StepLabel>
         <div className="flex gap-3">
@@ -297,6 +337,7 @@ export default function HeroGenerator() {
           })}
         </div>
       </div>
+      )}
 
       <div className="mb-8">
         <StepLabel n={designStep}>Upload your design</StepLabel>

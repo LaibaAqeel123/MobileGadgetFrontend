@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Trash2, Smartphone, Loader2, Search } from 'lucide-react'
-import { listHeroModels, createHeroModel, deleteHeroModel } from '../../api/heroModels'
+import { listHeroModels, createHeroModel, deleteHeroModel, POSE_STRAIGHT, POSE_TILTED } from '../../api/heroModels'
 import { resolveImageUrl } from '../../api/client'
 import ImageUploadField from '../../components/ImageUploadField'
+import TiltedModelForm from '../../components/TiltedModelForm'
 import Button from '../../components/Button'
 
-const EMPTY_FORM = {
-  phoneName: '',
-  caseType: '',
+const EMPTY_STRAIGHT_FIELDS = {
   baseImageUrl: '',
   designMaskImageUrl: '',
   cameraMaskImageUrl: '',
@@ -17,7 +16,11 @@ const EMPTY_FORM = {
 export default function HeroModelManager() {
   const [models, setModels] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [poseType, setPoseType] = useState(POSE_STRAIGHT)
+  const [phoneName, setPhoneName] = useState('')
+  const [caseType, setCaseType] = useState('')
+  const [straightFields, setStraightFields] = useState(EMPTY_STRAIGHT_FIELDS)
+  const [tiltedFields, setTiltedFields] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [error, setError] = useState('')
@@ -38,17 +41,23 @@ export default function HeroModelManager() {
     }
   }
 
-  function updateField(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }))
+  function resetForm() {
+    setPhoneName('')
+    setCaseType('')
+    setStraightFields(EMPTY_STRAIGHT_FIELDS)
+    setTiltedFields(null)
+  }
+
+  function updateStraightField(key, value) {
+    setStraightFields((prev) => ({ ...prev, [key]: value }))
   }
 
   const isComplete =
-    form.phoneName.trim() &&
-    form.caseType.trim() &&
-    form.baseImageUrl &&
-    form.designMaskImageUrl &&
-    form.cameraMaskImageUrl &&
-    form.overlayImageUrl
+    phoneName.trim() &&
+    caseType.trim() &&
+    (poseType === POSE_STRAIGHT
+      ? straightFields.baseImageUrl && straightFields.designMaskImageUrl && straightFields.cameraMaskImageUrl && straightFields.overlayImageUrl
+      : tiltedFields !== null)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -58,14 +67,12 @@ export default function HeroModelManager() {
     setError('')
     try {
       await createHeroModel({
-        phoneName: form.phoneName.trim(),
-        caseType: form.caseType.trim(),
-        baseImageUrl: form.baseImageUrl,
-        designMaskImageUrl: form.designMaskImageUrl,
-        cameraMaskImageUrl: form.cameraMaskImageUrl,
-        overlayImageUrl: form.overlayImageUrl,
+        phoneName: phoneName.trim(),
+        caseType: caseType.trim(),
+        poseType,
+        ...(poseType === POSE_STRAIGHT ? straightFields : tiltedFields),
       })
-      setForm(EMPTY_FORM)
+      resetForm()
       await refresh()
     } catch {
       setError('Failed to save model.')
@@ -98,7 +105,7 @@ export default function HeroModelManager() {
       <div className="mb-8">
         <h1 className="text-xl font-semibold text-zinc-900">Model Manager</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Add a phone + case with its 4 layer images. Once saved, it's available in the Generator.
+          Add a phone + case. Once saved, it's available in the Generator.
         </p>
       </div>
 
@@ -108,8 +115,8 @@ export default function HeroModelManager() {
             <label className="text-xs font-medium text-zinc-600">Phone name</label>
             <input
               type="text"
-              value={form.phoneName}
-              onChange={(e) => updateField('phoneName', e.target.value)}
+              value={phoneName}
+              onChange={(e) => setPhoneName(e.target.value)}
               placeholder="e.g. iPhone 16 Pro"
               className="border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
             />
@@ -118,20 +125,51 @@ export default function HeroModelManager() {
             <label className="text-xs font-medium text-zinc-600">Case type</label>
             <input
               type="text"
-              value={form.caseType}
-              onChange={(e) => updateField('caseType', e.target.value)}
+              value={caseType}
+              onChange={(e) => setCaseType(e.target.value)}
               placeholder="e.g. Silicone Case"
               className="border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <ImageUploadField label="Base" value={form.baseImageUrl} onChange={(v) => updateField('baseImageUrl', v)} />
-          <ImageUploadField label="Design mask" value={form.designMaskImageUrl} onChange={(v) => updateField('designMaskImageUrl', v)} />
-          <ImageUploadField label="Camera mask" value={form.cameraMaskImageUrl} onChange={(v) => updateField('cameraMaskImageUrl', v)} />
-          <ImageUploadField label="Overlay" value={form.overlayImageUrl} onChange={(v) => updateField('overlayImageUrl', v)} />
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-zinc-600">Pose</label>
+          <div className="inline-flex rounded-lg border border-zinc-200 p-0.5 bg-zinc-50 w-fit">
+            <button
+              type="button"
+              onClick={() => {
+                setPoseType(POSE_STRAIGHT)
+                setTiltedFields(null)
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                poseType === POSE_STRAIGHT ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              Straight
+            </button>
+            <button
+              type="button"
+              onClick={() => setPoseType(POSE_TILTED)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                poseType === POSE_TILTED ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              Tilted
+            </button>
+          </div>
         </div>
+
+        {poseType === POSE_STRAIGHT ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <ImageUploadField label="Base" value={straightFields.baseImageUrl} onChange={(v) => updateStraightField('baseImageUrl', v)} />
+            <ImageUploadField label="Design mask" value={straightFields.designMaskImageUrl} onChange={(v) => updateStraightField('designMaskImageUrl', v)} />
+            <ImageUploadField label="Camera mask" value={straightFields.cameraMaskImageUrl} onChange={(v) => updateStraightField('cameraMaskImageUrl', v)} />
+            <ImageUploadField label="Overlay" value={straightFields.overlayImageUrl} onChange={(v) => updateStraightField('overlayImageUrl', v)} />
+          </div>
+        ) : (
+          <TiltedModelForm onReady={setTiltedFields} />
+        )}
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -179,7 +217,9 @@ export default function HeroModelManager() {
               <div className="p-3 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-medium text-sm text-zinc-900 truncate">{m.phoneName}</div>
-                  <div className="text-xs text-zinc-500 truncate">{m.caseType}</div>
+                  <div className="text-xs text-zinc-500 truncate">
+                    {m.caseType} · {m.poseType === POSE_TILTED ? 'Tilted' : 'Straight'}
+                  </div>
                 </div>
                 <button
                   onClick={() => handleDelete(m.id)}

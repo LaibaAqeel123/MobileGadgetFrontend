@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Trash2, Smartphone, Loader2, Search } from 'lucide-react'
-import { listHeroModels, createHeroModel, deleteHeroModel, POSE_STRAIGHT, POSE_TILTED } from '../../api/heroModels'
+import { Trash2, Smartphone, Loader2, Search, Pencil, X } from 'lucide-react'
+import { listHeroModels, createHeroModel, updateHeroModel, deleteHeroModel, POSE_STRAIGHT, POSE_TILTED } from '../../api/heroModels'
 import { resolveImageUrl } from '../../api/client'
 import ImageUploadField from '../../components/ImageUploadField'
 import TiltedModelForm from '../../components/TiltedModelForm'
@@ -21,6 +21,8 @@ export default function HeroModelManager() {
   const [caseType, setCaseType] = useState('')
   const [straightFields, setStraightFields] = useState(EMPTY_STRAIGHT_FIELDS)
   const [tiltedFields, setTiltedFields] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editingTiltedModel, setEditingTiltedModel] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [error, setError] = useState('')
@@ -46,10 +48,36 @@ export default function HeroModelManager() {
     setCaseType('')
     setStraightFields(EMPTY_STRAIGHT_FIELDS)
     setTiltedFields(null)
+    setEditingId(null)
+    setEditingTiltedModel(null)
   }
 
   function updateStraightField(key, value) {
     setStraightFields((prev) => ({ ...prev, [key]: value }))
+  }
+
+  // Reopens an already-saved model in the form above, exactly as last saved (same photo, outline,
+  // spots for Tilted) -- so improving one model doesn't mean re-uploading the photo and redoing
+  // detection from scratch, just refining what's already there.
+  function handleEdit(m) {
+    setPhoneName(m.phoneName)
+    setCaseType(m.caseType)
+    setPoseType(m.poseType)
+    setEditingId(m.id)
+    if (m.poseType === POSE_STRAIGHT) {
+      setStraightFields({
+        baseImageUrl: m.baseImageUrl,
+        designMaskImageUrl: m.designMaskImageUrl,
+        cameraMaskImageUrl: m.cameraMaskImageUrl,
+        overlayImageUrl: m.overlayImageUrl,
+      })
+      setEditingTiltedModel(null)
+      setTiltedFields(null)
+    } else {
+      setEditingTiltedModel(m)
+      setTiltedFields(null) // TiltedModelForm's own effect (keyed by editingId below) fills this in
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const isComplete =
@@ -66,12 +94,17 @@ export default function HeroModelManager() {
     setSaving(true)
     setError('')
     try {
-      await createHeroModel({
+      const payload = {
         phoneName: phoneName.trim(),
         caseType: caseType.trim(),
         poseType,
         ...(poseType === POSE_STRAIGHT ? straightFields : tiltedFields),
-      })
+      }
+      if (editingId) {
+        await updateHeroModel(editingId, payload)
+      } else {
+        await createHeroModel(payload)
+      }
       resetForm()
       await refresh()
     } catch {
@@ -168,15 +201,20 @@ export default function HeroModelManager() {
             <ImageUploadField label="Overlay" value={straightFields.overlayImageUrl} onChange={(v) => updateStraightField('overlayImageUrl', v)} />
           </div>
         ) : (
-          <TiltedModelForm onReady={setTiltedFields} />
+          <TiltedModelForm key={editingId ?? 'new'} onReady={setTiltedFields} initialModel={editingTiltedModel} />
         )}
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        <div>
+        <div className="flex items-center gap-2">
           <Button type="submit" disabled={!isComplete} loading={saving}>
-            {saving ? 'Saving...' : 'Add model'}
+            {saving ? 'Saving...' : editingId ? 'Save changes' : 'Add model'}
           </Button>
+          {editingId && (
+            <Button type="button" variant="secondary" onClick={resetForm} disabled={saving}>
+              <X className="w-4 h-4" /> Cancel edit
+            </Button>
+          )}
         </div>
       </form>
 
@@ -221,14 +259,23 @@ export default function HeroModelManager() {
                     {m.caseType} · {m.poseType === POSE_TILTED ? 'Tilted' : 'Straight'}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDelete(m.id)}
-                  disabled={deletingId === m.id}
-                  aria-label="Delete model"
-                  className="shrink-0 p-1.5 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
-                >
-                  {deletingId === m.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                </button>
+                <div className="shrink-0 flex items-center gap-1">
+                  <button
+                    onClick={() => handleEdit(m)}
+                    aria-label="Edit model"
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(m.id)}
+                    disabled={deletingId === m.id}
+                    aria-label="Delete model"
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+                  >
+                    {deletingId === m.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             </div>
           ))}

@@ -26,6 +26,16 @@ export async function createHeroModel(payload) {
   return res.json()
 }
 
+export async function updateHeroModel(id, payload) {
+  const res = await apiFetch(`/api/heromodels/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error('Failed to save hero model')
+  return res.json()
+}
+
 export async function deleteHeroModel(id) {
   const res = await apiFetch(`/api/heromodels/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to delete hero model')

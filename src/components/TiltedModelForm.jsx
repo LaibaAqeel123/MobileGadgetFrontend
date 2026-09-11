@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, Wand2, ImageOff, MousePointer2, ShieldX, ShieldCheck, RotateCcw } from 'lucide-react'
 import { detectTilted, bakeCameraMask, previewTiltedRender } from '../api/heroModels'
+import { resolveImageUrl } from '../api/client'
 import CameraOutlineEditor from './CameraOutlineEditor'
 import Button from './Button'
 
@@ -16,11 +17,17 @@ import Button from './Button'
 /// the admin tells the system exactly where that area is for THIS phone; there's no per-model
 /// on/off choice on purpose.
 ///
+/// initialModel (optional): an existing saved HeroModel row to start from instead of an upload --
+/// editing an already-saved Tilted model reopens it exactly as last saved (same photo, outline,
+/// spots) so the admin can refine just the outline without re-uploading the photo and starting
+/// detection over. Uploading a new photo here still fully replaces it and re-detects, same as the
+/// create flow -- editing an existing model doesn't lock the photo in.
+///
 /// Calls onReady(fields | null) whenever the detection result the parent should save changes --
 /// null while there's no usable result yet (so the parent's Save button stays disabled).
-export default function TiltedModelForm({ onReady }) {
+export default function TiltedModelForm({ onReady, initialModel }) {
   const [photoFile, setPhotoFile] = useState(null)
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null)
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState(initialModel ? resolveImageUrl(initialModel.baseImageUrl) : null)
   const [detecting, setDetecting] = useState(false)
   const [baking, setBaking] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -29,6 +36,31 @@ export default function TiltedModelForm({ onReady }) {
   const [spots, setSpots] = useState([])
   const [mode, setMode] = useState('outline')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!initialModel) return
+    // "Reset to auto-detected" has no fresh detection result to fall back to here (that only
+    // happened once, at original upload time) -- reset instead goes back to this model's last
+    // saved outline, which is the closest equivalent starting point for an edit session.
+    const savedOutlineJson = initialModel.cameraOutlinePointsJson || '[]'
+    const startPreview = {
+      baseImageUrl: initialModel.baseImageUrl,
+      silhouetteImageUrl: initialModel.designMaskImageUrl,
+      cameraMaskImageUrl: initialModel.cameraMaskImageUrl,
+      overlayImageUrl: initialModel.overlayImageUrl,
+      designQuadJson: initialModel.designQuadJson,
+      caseBboxJson: initialModel.caseBboxJson,
+      cameraOutlinePointsJson: savedOutlineJson,
+    }
+    const startOutline = JSON.parse(savedOutlineJson)
+    const startSpots = JSON.parse(initialModel.cameraSpotsJson || '[]')
+    setPreview(startPreview)
+    setOutline(startOutline)
+    setSpots(startSpots)
+    emitReady(startPreview, startOutline, startSpots)
+    runPreviewRender(startPreview)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handlePhotoSelect(e) {
     const file = e.target.files?.[0]

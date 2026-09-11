@@ -38,15 +38,28 @@ export const POSE_TILTED = 1
 
 /// Runs auto-detection on an admin-uploaded tilted photo. Saves the photo + 3 mask images (so
 /// they're ready to preview/save) but creates no HeroModel yet -- that's a separate save step.
-export async function detectTilted(photoFile, cameraRoundR, cameraPadPx, coverCameraPlate) {
+/// The returned cameraOutlinePointsJson is a starting guess (already-close points around the
+/// camera area) meant to be refined in the point editor, not used as-is.
+export async function detectTilted(photoFile) {
   const formData = new FormData()
   formData.append('photo', photoFile)
-  if (cameraRoundR != null) formData.append('cameraRoundR', cameraRoundR)
-  if (cameraPadPx != null) formData.append('cameraPadPx', cameraPadPx)
-  formData.append('coverCameraPlate', coverCameraPlate ? 'true' : 'false')
 
   const res = await apiFetch('/api/heromodels/detect-tilted', { method: 'POST', body: formData })
   if (!res.ok) throw new Error('Detection failed')
+  return res.json()
+}
+
+/// Fast path called after every point-editor edit: rasterizes a fresh camera mask directly from
+/// the admin's current outline points + protect/allow spot overrides (no re-detection -- a couple
+/// seconds, not ~30s) and returns its URL. Follow with previewTiltedRender to see it applied.
+export async function bakeCameraMask(baseImageUrl, cameraOutlinePointsJson, cameraSpotsJson) {
+  const formData = new FormData()
+  formData.append('baseImageUrl', baseImageUrl)
+  formData.append('cameraOutlinePointsJson', cameraOutlinePointsJson)
+  formData.append('cameraSpotsJson', cameraSpotsJson)
+
+  const res = await apiFetch('/api/heromodels/bake-camera-mask', { method: 'POST', body: formData })
+  if (!res.ok) throw new Error('Failed to bake camera mask')
   return res.json()
 }
 

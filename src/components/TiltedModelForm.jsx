@@ -9,6 +9,11 @@ import Button from './Button'
 /// roundness/margin can be nudged and re-detected as many times as needed; nothing is saved to a
 /// HeroModel until the admin submits the surrounding form (see HeroModelManager).
 ///
+/// The camera module area (lenses + the raised plate/trim around them) always stays in its real
+/// photographed color and never gets the design -- confirmed against hero-156.png (a working
+/// Straight example): every real phone's camera bump is its own distinct part of the product,
+/// shown as-is, on every phone, always. There's no per-model choice here on purpose.
+///
 /// Calls onReady(fields | null) whenever the detection result the parent should save changes --
 /// null while there's no usable result yet (so the parent's Save button stays disabled).
 export default function TiltedModelForm({ onReady }) {
@@ -18,9 +23,8 @@ export default function TiltedModelForm({ onReady }) {
   const [rendering, setRendering] = useState(false)
   const [preview, setPreview] = useState(null)
   const [testImageUrl, setTestImageUrl] = useState(null)
-  const [roundR, setRoundR] = useState(18)
+  const [roundR, setRoundR] = useState(25)
   const [padPx, setPadPx] = useState(20)
-  const [coverCameraPlate, setCoverCameraPlate] = useState(false)
   const [error, setError] = useState('')
 
   async function handlePhotoSelect(e) {
@@ -31,14 +35,14 @@ export default function TiltedModelForm({ onReady }) {
     setPreview(null)
     setTestImageUrl(null)
     onReady(null)
-    await runDetect(file, roundR, padPx, coverCameraPlate)
+    await runDetect(file, roundR, padPx)
   }
 
-  async function runDetect(file, r, p, coverPlate) {
+  async function runDetect(file, r, p) {
     setDetecting(true)
     setError('')
     try {
-      const result = await detectTilted(file, r, p, coverPlate)
+      const result = await detectTilted(file, r, p, false)
       setPreview(result)
       onReady({
         baseImageUrl: result.baseImageUrl,
@@ -49,7 +53,6 @@ export default function TiltedModelForm({ onReady }) {
         caseBboxJson: result.caseBboxJson,
         cameraRoundR: r,
         cameraPadPx: p,
-        coverCameraPlate: coverPlate,
       })
       await runPreviewRender(result)
     } catch {
@@ -75,7 +78,7 @@ export default function TiltedModelForm({ onReady }) {
   }
 
   function handleRedetect() {
-    if (photoFile && !detecting) runDetect(photoFile, roundR, padPx, coverCameraPlate)
+    if (photoFile && !detecting) runDetect(photoFile, roundR, padPx)
   }
 
   return (
@@ -120,36 +123,21 @@ export default function TiltedModelForm({ onReady }) {
           </div>
 
           <p className="text-xs text-zinc-500">
-            Check both corners and the camera area on the test preview above. A little roundness/margin off? Nudge it below and re-detect —
+            Check both corners and the camera area on the test preview above. The camera module itself (lenses, flash, the plate around
+            them) always stays untouched — that's correct on every phone. A little roundness/margin off? Nudge it below and re-detect —
             don't worry about getting this perfect on the first try.
           </p>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-zinc-600">Camera area roundness ({roundR}px)</label>
-              <input type="range" min="4" max="40" value={roundR} onChange={(e) => setRoundR(Number(e.target.value))} />
+              <label className="text-xs font-medium text-zinc-600">Camera area roundness ({roundR}%)</label>
+              <input type="range" min="0" max="100" value={roundR} onChange={(e) => setRoundR(Number(e.target.value))} />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-zinc-600">Camera area margin ({padPx}px)</label>
               <input type="range" min="4" max="40" value={padPx} onChange={(e) => setPadPx(Number(e.target.value))} />
             </div>
           </div>
-
-          <label className="flex items-start gap-2 text-xs text-zinc-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={coverCameraPlate}
-              onChange={(e) => setCoverCameraPlate(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="font-medium text-zinc-700">Print design on the camera plate too</span>
-              <br />
-              Off (default): the raised area around the lenses stays its real photographed color — correct when that
-              trim is a separate material/color from the body. On: only the lens/flash holes themselves stay
-              unprinted — use this for a one-piece case molded in a single uniform color, like this photo.
-            </span>
-          </label>
 
           <div>
             <Button type="button" variant="secondary" onClick={handleRedetect} disabled={detecting}>

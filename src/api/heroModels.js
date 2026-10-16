@@ -45,6 +45,50 @@ export async function deleteHeroModel(id) {
 // 0 = Straight, 1 = Tilted, matching HeroModelPoseType's declaration order exactly.
 export const POSE_STRAIGHT = 0
 export const POSE_TILTED = 1
+export const POSE_MODEL3D = 2
+
+async function errorFrom(res, fallback) {
+  const data = await res.json().catch(() => null)
+  return new Error(data?.error || fallback)
+}
+
+/// Uploads a .glb and runs the server-side check on it. Saves the file (so it can be previewed and
+/// saved) but creates no HeroModel yet. A bad file is NOT an error here: it comes back as a report
+/// with errors, so the admin sees why. Returns { glbUrl, report, printMaterialName, printLayoutJson }.
+export async function inspectGlb(file, printMaterialName) {
+  const formData = new FormData()
+  formData.append('glb', file)
+  if (printMaterialName) formData.append('printMaterialName', printMaterialName)
+
+  const res = await apiFetch('/api/heromodels/inspect-glb', { method: 'POST', body: formData })
+  if (!res.ok) throw await errorFrom(res, 'Could not check the 3D model file')
+  return res.json()
+}
+
+/// Re-checks an already-uploaded .glb against a different printable material (the admin's pick
+/// from the material list) without uploading it again.
+export async function reinspectGlb(glbUrl, printMaterialName) {
+  const formData = new FormData()
+  formData.append('glbUrl', glbUrl)
+  if (printMaterialName) formData.append('printMaterialName', printMaterialName)
+
+  const res = await apiFetch('/api/heromodels/reinspect-glb', { method: 'POST', body: formData })
+  if (!res.ok) throw await errorFrom(res, 'Could not re-check the 3D model file')
+  return res.json()
+}
+
+/// Creates (no id) or updates (with id) a 3D model. Unlike the 2D saves above, the server's own
+/// reason is passed through, because for 3D it is meaningful to the admin ("no PRINT_AREA found").
+export async function saveModel3D({ id, phoneName, caseType, glbUrl, printMaterialName }) {
+  const payload = { phoneName, caseType, poseType: POSE_MODEL3D, glbUrl, printMaterialName }
+  const res = await apiFetch(id ? `/api/heromodels/${id}` : '/api/heromodels', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw await errorFrom(res, 'Failed to save the 3D model')
+  return res.json()
+}
 
 /// Runs auto-detection on an admin-uploaded tilted photo. Saves the photo + 3 mask images (so
 /// they're ready to preview/save) but creates no HeroModel yet -- that's a separate save step.

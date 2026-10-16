@@ -8,6 +8,7 @@ import HeroGenerator from './pages/HeroGenerator'
 import HeroModelManager from './pages/admin/HeroModelManager'
 import TeamManager from './pages/admin/TeamManager'
 import BackgroundManager from './pages/admin/BackgroundManager'
+import Model3DManager from './pages/admin/Model3DManager'
 
 function RootRedirect() {
   const { status, isAdmin } = useAuth()
@@ -31,6 +32,7 @@ function App() {
 
             <Route element={<AdminRoute />}>
               <Route path="/admin" element={<HeroModelManager />} />
+              <Route path="/admin/3d" element={<Model3DManager />} />
               <Route path="/admin/backgrounds" element={<BackgroundManager />} />
               <Route path="/admin/team" element={<TeamManager />} />
             </Route>

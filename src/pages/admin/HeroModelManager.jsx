@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Trash2, Smartphone, Loader2, Search, Pencil, X } from 'lucide-react'
-import { listHeroModels, createHeroModel, updateHeroModel, deleteHeroModel, POSE_STRAIGHT, POSE_TILTED } from '../../api/heroModels'
+import { listHeroModels, createHeroModel, updateHeroModel, deleteHeroModel, POSE_STRAIGHT, POSE_TILTED, POSE_MODEL3D } from '../../api/heroModels'
 import { resolveImageUrl } from '../../api/client'
 import ImageUploadField from '../../components/ImageUploadField'
 import TiltedModelForm from '../../components/TiltedModelForm'
@@ -35,7 +35,8 @@ export default function HeroModelManager() {
   async function refresh() {
     setLoading(true)
     try {
-      setModels(await listHeroModels())
+      // 3D models are managed on their own page; they have no photos to show here
+      setModels((await listHeroModels()).filter((m) => m.poseType !== POSE_MODEL3D))
     } catch {
       setError('Failed to load models.')
     } finally {

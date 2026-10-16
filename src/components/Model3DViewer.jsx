@@ -38,6 +38,21 @@ function makeBackdrop(hex) {
   return t
 }
 
+function makeGradientBackdrop(top, bottom) {
+  const c = document.createElement('canvas')
+  c.width = 8
+  c.height = 512
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0, 0, 0, 512)
+  grad.addColorStop(0, top)
+  grad.addColorStop(1, bottom)
+  g.fillStyle = grad
+  g.fillRect(0, 0, 8, 512)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 function makeBlobTexture() {
   const c = document.createElement('canvas')
   c.width = 256
@@ -128,9 +143,11 @@ function normalizeOrientation(holder, printMeshes) {
 ///   backdrop          hex colour of the studio backdrop
 ///   onLoad / onError  called when the model finishes loading or fails
 ///
-/// ref.capture(scale) resolves to a PNG blob of the current view at higher resolution.
+/// ref.capture(size) resolves to a square PNG blob (size x size pixels) of the current view, rendered
+/// at that fixed resolution whatever size the on-screen frame is, so a phone and a desktop produce the
+/// same quality of picture.
 const Model3DViewer = forwardRef(function Model3DViewer(
-  { glbUrl, printMaterialName, layout, designImage, viewRequest, backdrop = '#c9ccd3', onLoad, onError, className = '' },
+  { glbUrl, printMaterialName, layout, designImage, designFit, viewRequest, backdrop = '#c9ccd3', onLoad, onError, className = '' },
   ref,
 ) {
   const mountRef = useRef(null)
@@ -140,7 +157,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   // the model loads asynchronously, so applyDesign must read the newest design, not the one from the
   // render in which loading started
   const latest = useRef({})
-  latest.current = { designImage, layout }
+  latest.current = { designImage, layout, designFit }
 
   // ---- one-time scene setup ----
   useEffect(() => {
@@ -154,7 +171,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     mount.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    scene.background = makeBackdrop(backdrop)
+    scene.background = makeBackdrop(typeof backdrop === 'string' ? backdrop : '#c9ccd3')
     const pmrem = new THREE.PMREMGenerator(renderer)
     const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
     scene.environment = envTexture
@@ -193,12 +210,30 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     const pivot = new THREE.Group()
     scene.add(pivot)
 
+    // a background photo is cover-fitted to the frame (cropped, never stretched), which depends on
+    // the frame's shape, so it is recomputed whenever the frame is resized
+    const fitBackground = () => {
+      const t = scene.background
+      if (!t || !t.isTexture || !t.userData.photo || !t.image) return
+      const ia = t.image.width / t.image.height
+      const ca = (mount.clientWidth || 1) / (mount.clientHeight || 1)
+      t.repeat.set(1, 1)
+      t.offset.set(0, 0)
+      if (ia > ca) {
+        t.repeat.x = ca / ia
+        t.offset.x = (1 - t.repeat.x) / 2
+      } else {
+        t.repeat.y = ia / ca
+        t.offset.y = (1 - t.repeat.y) / 2
+      }
+    }
     const resize = () => {
       const w = mount.clientWidth || 1
       const h = mount.clientHeight || 1
       renderer.setSize(w, h, false)
       camera.aspect = w / h
       camera.updateProjectionMatrix()
+      fitBackground()
     }
     const ro = new ResizeObserver(resize)
     ro.observe(mount)
@@ -209,7 +244,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       renderer.render(scene, camera)
     })
 
-    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize })
+    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground })
 
     return () => {
       ro.disconnect()
@@ -296,7 +331,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   // ---- print the design (or show the model's own material when there is none) ----
   function applyDesign() {
     const st = s.current
-    const { designImage, layout } = latest.current
+    const { designImage, layout, designFit } = latest.current
     if (!st.printMaterials) return
     if (!designImage || !layout) {
       for (const m of st.printMaterials) {
@@ -323,16 +358,22 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     const ih = designImage.naturalHeight || designImage.height
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, TEX, TEX)
-    // cover-fit the design into the printable rectangle
-    const k = Math.max(rw / iw, rh / ih)
+    // cover-fit the design into the printable rectangle, then apply the customer's zoom and move
+    // (panX/panY run -1..1 across however much of the design is hidden past the edge)
+    const zoom = designFit?.zoom ?? 1
+    const k = Math.max(rw / iw, rh / ih) * zoom
     const dw = iw * k
     const dh = ih * k
+    const maxX = Math.max(0, (dw - rw) / 2)
+    const maxY = Math.max(0, (dh - rh) / 2)
+    const dx = rx + (rw - dw) / 2 - (designFit?.panX ?? 0) * maxX
+    const dy = ry + (rh - dh) / 2 - (designFit?.panY ?? 0) * maxY
     ctx.save()
     ctx.beginPath()
     ctx.rect(rx, ry, rw, rh)
     ctx.clip()
     ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(designImage, rx + (rw - dw) / 2, ry + (rh - dh) / 2, dw, dh)
+    ctx.drawImage(designImage, dx, dy, dw, dh)
     ctx.restore()
     st.designTex.needsUpdate = true
     for (const m of st.printMaterials) {
@@ -340,7 +381,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       m.needsUpdate = true
     }
   }
-  useEffect(applyDesign, [designImage, layout])
+  useEffect(applyDesign, [designImage, layout, designFit?.zoom, designFit?.panX, designFit?.panY])
 
   // ---- camera presets ----
   useEffect(() => {
@@ -353,24 +394,58 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     st.controls.update()
   }, [viewRequest])
 
-  // ---- backdrop colour ----
+  // ---- backdrop: colour string, { top, bottom } gradient, or { imageUrl } photo ----
+  const backdropKey = typeof backdrop === 'string' ? backdrop : JSON.stringify(backdrop)
   useEffect(() => {
     const st = s.current
     if (!st.scene) return
-    st.scene.background?.dispose?.()
-    st.scene.background = makeBackdrop(backdrop)
-  }, [backdrop])
+    let cancelled = false
+    const set = (tex) => {
+      st.scene.background?.dispose?.()
+      st.scene.background = tex
+    }
+    if (typeof backdrop === 'string') {
+      set(makeBackdrop(backdrop))
+    } else if (backdrop?.top && backdrop?.bottom) {
+      set(makeGradientBackdrop(backdrop.top, backdrop.bottom))
+    } else if (backdrop?.imageUrl) {
+      const loader = new THREE.TextureLoader()
+      loader.setCrossOrigin('anonymous') // so the exported PNG is not blocked as "tainted"
+      loader.load(
+        backdrop.imageUrl,
+        (tex) => {
+          if (cancelled || !s.current.scene) {
+            tex.dispose()
+            return
+          }
+          tex.colorSpace = THREE.SRGBColorSpace
+          tex.userData.photo = true
+          set(tex)
+          s.current.fitBackground()
+        },
+        undefined,
+        () => cb.current.onError?.(new Error('background')),
+      )
+    }
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backdropKey])
 
   useImperativeHandle(ref, () => ({
-    capture: (scale = 3) =>
+    capture: (size = 2048) =>
       new Promise((resolve) => {
-        const { renderer, scene, camera, resize } = s.current
-        const prev = renderer.getPixelRatio()
-        renderer.setPixelRatio(scale)
-        renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight, false)
+        const { renderer, scene, camera, resize, fitBackground } = s.current
+        const prevRatio = renderer.getPixelRatio()
+        renderer.setPixelRatio(1)
+        renderer.setSize(size, size, false)
+        camera.aspect = 1
+        camera.updateProjectionMatrix()
+        fitBackground()
         renderer.render(scene, camera)
         renderer.domElement.toBlob((blob) => {
-          renderer.setPixelRatio(prev)
+          renderer.setPixelRatio(prevRatio)
           resize()
           resolve(blob)
         }, 'image/png')

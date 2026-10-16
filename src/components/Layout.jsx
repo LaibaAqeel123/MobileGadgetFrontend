@@ -28,8 +28,11 @@ export default function Layout({ children }) {
           {user && (
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <nav className="flex items-center gap-1 overflow-x-auto">
-                <NavLink to="/generator" className={navLinkClass}>
+                <NavLink to="/generator" end className={navLinkClass}>
                   Generator
+                </NavLink>
+                <NavLink to="/generator/3d" className={navLinkClass}>
+                  3D Generator
                 </NavLink>
                 {isAdmin && (
                   <>

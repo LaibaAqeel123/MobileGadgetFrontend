@@ -44,7 +44,7 @@ export default function HeroGenerator() {
   useEffect(() => {
     Promise.all([listHeroModels(), listScenes()])
       .then(([modelsData, scenesData]) => {
-        // this screen renders from photos; 3D models get their own generator (not built yet)
+        // this screen renders from photos; 3D models have their own generator (HeroGenerator3D)
         setModels(modelsData.filter((m) => m.poseType !== POSE_MODEL3D))
         setScenes(scenesData)
         const defaultScene = scenesData.find((s) => s.isDefault) ?? scenesData[0]

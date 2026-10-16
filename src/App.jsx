@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
 import Login from './pages/Login'
 import HeroGenerator from './pages/HeroGenerator'
+import HeroGenerator3D from './pages/HeroGenerator3D'
 import HeroModelManager from './pages/admin/HeroModelManager'
 import TeamManager from './pages/admin/TeamManager'
 import BackgroundManager from './pages/admin/BackgroundManager'
@@ -28,6 +29,7 @@ function App() {
 
             <Route element={<ProtectedRoute />}>
               <Route path="/generator" element={<HeroGenerator />} />
+              <Route path="/generator/3d" element={<HeroGenerator3D />} />
             </Route>
 
             <Route element={<AdminRoute />}>

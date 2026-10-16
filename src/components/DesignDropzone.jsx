@@ -1,7 +1,9 @@
 import { useEffect, useId, useState } from 'react'
 import { Upload, X } from 'lucide-react'
 
-export default function DesignDropzone({ file, onChange, label = 'Click or drag a design image here', hint = 'PNG, JPG, or WebP', previewAlt = 'Your design' }) {
+// compact: a short strip instead of a wide 16:9 box, for use inside a narrow side panel
+export default function DesignDropzone({ file, onChange, label = 'Click or drag a design image here', hint = 'PNG, JPG, or WebP', previewAlt = 'Your design', compact = false }) {
+  const shape = compact ? 'h-24' : 'aspect-video'
   const inputId = useId()
   const [previewUrl, setPreviewUrl] = useState(null)
 
@@ -28,7 +30,7 @@ export default function DesignDropzone({ file, onChange, label = 'Click or drag 
 
   if (previewUrl) {
     return (
-      <div className="relative rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 aspect-video flex items-center justify-center">
+      <div className={`relative rounded-xl border border-zinc-200 overflow-hidden bg-zinc-50 ${shape} flex items-center justify-center`}>
         <img src={previewUrl} alt={previewAlt} className="max-w-full max-h-full object-contain" />
         <button
           onClick={() => onChange(null)}
@@ -46,7 +48,7 @@ export default function DesignDropzone({ file, onChange, label = 'Click or drag 
       htmlFor={inputId}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
-      className="flex flex-col items-center justify-center gap-2 aspect-video rounded-xl border-2 border-dashed border-zinc-300 hover:border-indigo-400 hover:bg-indigo-50/40 cursor-pointer transition-colors"
+      className={`flex flex-col items-center justify-center gap-1 ${shape} rounded-xl border-2 border-dashed border-zinc-300 hover:border-indigo-400 hover:bg-indigo-50/40 cursor-pointer transition-colors`}
     >
       <Upload className="w-6 h-6 text-zinc-400" />
       <span className="text-sm text-zinc-500">{label}</span>

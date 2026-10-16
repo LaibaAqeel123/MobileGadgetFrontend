@@ -147,6 +147,8 @@ export default function HeroGenerator3D() {
   const modelReady = selectedId !== null && readyModelId === selectedId
   const guide = loadedInfo?.modelId === selectedId ? loadedInfo.guide : null
   const hasTrim = loadedInfo?.modelId === selectedId ? loadedInfo.hasTrim : false
+  // the model's own material (leather, gloss, metal...) is shown as made, so the finish slider is not offered
+  const ownLook = loadedInfo?.modelId === selectedId && loadedInfo.look === 'file'
 
   // turn the chosen file into an image the viewer can draw, and start its placement from scratch
   useEffect(() => {
@@ -249,9 +251,9 @@ export default function HeroGenerator3D() {
               lightStrength={lightStrength}
               autoSpin={autoSpin}
               trimColor={hasTrim && trimTouched ? trimColor : null}
-              onLoad={({ guide: g, hasTrim: trim }) => {
+              onLoad={({ guide: g, hasTrim: trim, look }) => {
                 setReadyModelId(selectedModel.id)
-                setLoadedInfo({ modelId: selectedModel.id, guide: g, hasTrim: trim })
+                setLoadedInfo({ modelId: selectedModel.id, guide: g, hasTrim: trim, look })
               }}
               onError={() => setError('The 3D model or background could not be loaded.')}
             />
@@ -432,7 +434,11 @@ export default function HeroGenerator3D() {
 
           <Section title="Look">
             <div className="flex flex-col gap-3">
-              <Slider label="Case finish" hint="glossy ← → matte" value={roughness} min={0.1} max={1} step={0.01} onChange={setRoughness} />
+              {ownLook ? (
+                <p className="text-xs text-zinc-500">This case keeps the material finish it was made with.</p>
+              ) : (
+                <Slider label="Case finish" hint="glossy ← → matte" value={roughness} min={0.1} max={1} step={0.01} onChange={setRoughness} />
+              )}
               <Slider label="Light" value={lightStrength} min={0.3} max={2.5} step={0.05} onChange={setLightStrength} />
               {hasTrim && (
                 <label className="flex items-center justify-between text-xs text-zinc-600">

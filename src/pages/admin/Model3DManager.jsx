@@ -111,6 +111,7 @@ export default function Model3DManager() {
   const [viewRequest, setViewRequest] = useState({ name: 'back', n: 0 })
   const [backdrop, setBackdrop] = useState(BACKDROPS[0].value)
   const [loadStatus, setLoadStatus] = useState('')
+  const [look, setLook] = useState(null) // 'file' | 'default': whose material the printable part is shown with
   const fileInputRef = useRef(null)
   const viewerRef = useRef(null)
   const thumbDesignRef = useRef(null)
@@ -263,7 +264,10 @@ export default function Model3DManager() {
               designImage={previewDesign === 'pattern' ? testDesign : null}
               viewRequest={viewRequest}
               backdrop={backdrop}
-              onLoad={() => setLoadStatus('')}
+              onLoad={({ look: l }) => {
+                setLoadStatus('')
+                setLook(l)
+              }}
               onError={() => setLoadStatus('The preview could not load this file.')}
             />
           ) : (
@@ -344,6 +348,14 @@ export default function Model3DManager() {
                 {!uploading && <Upload className="w-4 h-4" />} {draft ? 'Choose a different .glb file' : 'Choose .glb file'}
               </Button>
               <ReportPanel report={draft?.report} onPickMaterial={handlePickMaterial} picking={picking} />
+              {showPreview && look && (
+                <p className="text-xs rounded-lg bg-zinc-50 border border-zinc-200 px-3 py-2 text-zinc-600">
+                  <span className="font-medium text-zinc-700">Case material: </span>
+                  {look === 'file'
+                    ? "uses the material made into this file (its finish and surface detail are kept; the customer's design goes on top)."
+                    : 'the file has no material detail for the case, so our soft default look is used. Customers can adjust its finish.'}
+                </p>
+              )}
             </div>
           </Section>
 

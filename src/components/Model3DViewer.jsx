@@ -358,7 +358,16 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       mount.dataset.frames = String(++frames) // read by tests to prove an idle view draws nothing
     })
 
-    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground, invalidate, key, rim })
+    // which look the printable material ended up with ('file' or 'default'), readable by tests and the page
+    const mount_setLook = (looks) => {
+      mount.dataset.look = looks.print
+      // plain facts about the printable material, so tests can check the artist's values were kept
+      const pm = s.current.printMaterials?.[0]
+      mount.dataset.printRoughness = pm ? String(Math.round(pm.roughness * 100) / 100) : ''
+      mount.dataset.printMetalness = pm ? String(Math.round(pm.metalness * 100) / 100) : ''
+      mount.dataset.printNormalMap = pm ? String(Boolean(pm.normalMap)) : ''
+    }
+    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground, invalidate, key, rim, mount_setLook })
 
     return () => {
       ro.disconnect()
@@ -385,7 +394,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       glbUrl,
       (gltf) => {
         if (cancelled || !s.current.scene) return
-        const { pivot, floor } = s.current
+        const { pivot, floor, mount_setLook } = s.current
         while (pivot.children.length) {
           const old = pivot.children[0]
           pivot.remove(old)
@@ -424,14 +433,15 @@ const Model3DViewer = forwardRef(function Model3DViewer(
 
         const printMaterials = []
         const plainMaterials = []
+        const looks = { print: 'default', plain: null }
         const grain = makeGrainTexture()
         gltf.scene.traverse((o) => {
           if (!o.isMesh) return
           o.castShadow = true
           o.receiveShadow = true
           o.material = Array.isArray(o.material)
-            ? o.material.map((m) => upgradePrint(m, printMaterialName, grain, printMaterials, plainMaterials))
-            : upgradePrint(o.material, printMaterialName, grain, printMaterials, plainMaterials)
+            ? o.material.map((m) => upgradePrint(m, printMaterialName, grain, printMaterials, plainMaterials, looks))
+            : upgradePrint(o.material, printMaterialName, grain, printMaterials, plainMaterials, looks)
         })
 
         pivot.add(holder)
@@ -442,7 +452,9 @@ const Model3DViewer = forwardRef(function Model3DViewer(
         applyLook()
         s.current.invalidate()
         const guide = layout && printMeshes.length ? buildPrintGuide(printMeshes, printMaterialName, layout) : null
-        cb.current.onLoad?.({ printMeshCount: printMeshes.length, guide, hasTrim: plainMaterials.length > 0 })
+        mount_setLook(looks)
+        s.current.invalidate()
+        cb.current.onLoad?.({ printMeshCount: printMeshes.length, guide, hasTrim: plainMaterials.length > 0, look: looks.print })
       },
       undefined,
       (err) => cb.current.onError?.(err),
@@ -457,7 +469,9 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   function applyLook() {
     const st = s.current
     const { roughness: rough, trimColor: trim } = latest.current
-    for (const m of [...(st.printMaterials || []), ...(st.plainMaterials || [])]) m.roughness = rough
+    for (const m of [...(st.printMaterials || []), ...(st.plainMaterials || [])]) {
+      if (!m.userData.ownLook) m.roughness = rough
+    }
     if (trim) for (const m of st.plainMaterials || []) m.color.set(trim)
     st.invalidate?.()
   }
@@ -485,6 +499,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     if (!designImage || !layout) {
       for (const m of st.printMaterials) {
         m.map = m.userData.originalMap || null
+        if (m.userData.ownLook) m.color.copy(m.userData.originalColor)
         m.needsUpdate = true
       }
       st.invalidate?.()
@@ -512,6 +527,8 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     st.designTex.needsUpdate = true
     for (const m of st.printMaterials) {
       m.map = st.designTex
+      // the artist's colour tint would tint the customer's design, so it is whitened while a design is on
+      if (m.userData.ownLook) m.color.set('#ffffff')
       m.needsUpdate = true
     }
     st.invalidate?.()
@@ -613,23 +630,55 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   return <div ref={mountRef} className={className} />
 })
 
-/// Replaces the printable material with a softly-matte physical one (keeping the model's own map so
-/// it can be restored); leaves every other material exactly as the file made it.
-function upgradePrint(m, printName, grain, printMaterials, plainMaterials) {
-  // the unprinted case parts (our models call that material CASE_PLAIN) get the same soft silicone look
-  // and a colour the customer can change
-  if (m.name === 'CASE_PLAIN' && m.name !== printName) {
-    const plain = new THREE.MeshPhysicalMaterial({
-      name: m.name, color: m.color, roughness: 0.6, metalness: 0,
-      sheen: 0.18, sheenRoughness: 0.7, sheenColor: new THREE.Color('#d8dce6'), bumpMap: grain, bumpScale: 0.12,
-    })
-    plainMaterials.push(plain)
-    return plain
+/// Does this material carry a look the model's artist deliberately made -- leather grain, a glossy
+/// finish, metal, a soft sheen -- as opposed to a plain colour with nothing else set? Used to decide
+/// whether to keep the file's material or fall back to our built-in soft silicone look.
+///
+/// Anything an artist has to go out of their way to make counts: any surface texture (normal, bump,
+/// roughness, metal or occlusion map), the extra shaders (clearcoat, sheen, transmission), metal, or an
+/// explicitly glossy roughness. A matte plain colour does not, because that is what a file with no
+/// material work in it looks like.
+function hasOwnLook(m) {
+  const physical = m.isMeshPhysicalMaterial
+  return Boolean(
+    m.normalMap || m.bumpMap || m.roughnessMap || m.metalnessMap || m.aoMap ||
+      (physical && (m.clearcoat > 0 || m.sheen > 0 || m.transmission > 0 || m.iridescence > 0)) ||
+      m.metalness > 0.2 ||
+      m.roughness < 0.45,
+  )
+}
+
+/// Prepares the materials of a loaded model for printing:
+///  - the printable material keeps the artist's finish when the file has one (hasOwnLook): only its
+///    colour picture is swapped for the customer's design, and its colour tint is whitened while a
+///    design is on so the design is not tinted; otherwise it gets our soft silicone look;
+///  - the unprinted trim (material CASE_PLAIN) is treated the same way;
+///  - every other material is left exactly as the file made it.
+/// `looks` records which way each went, so the page can tell the admin and hide controls that would
+/// override a deliberate finish.
+function upgradePrint(m, printName, grain, printMaterials, plainMaterials, looks) {
+  const isPrint = m.name === printName
+  const isPlain = m.name === 'CASE_PLAIN' && !isPrint
+  if (!isPrint && !isPlain) return m
+
+  const own = hasOwnLook(m)
+  if (own) {
+    // keep the artist's material; for the printable one remember how to take the design back off
+    if (isPrint) {
+      m.userData.ownLook = true
+      m.userData.originalMap = m.map
+      m.userData.originalColor = m.color.clone()
+      printMaterials.push(m)
+      looks.print = 'file'
+    } else {
+      looks.plain = 'file'
+    }
+    return m
   }
-  if (m.name !== printName) return m
-  const pm = new THREE.MeshPhysicalMaterial({
+
+  const soft = new THREE.MeshPhysicalMaterial({
     name: m.name,
-    map: m.map,
+    map: isPrint ? m.map : null,
     color: m.color,
     roughness: 0.6,
     metalness: 0,
@@ -639,9 +688,15 @@ function upgradePrint(m, printName, grain, printMaterials, plainMaterials) {
     bumpMap: grain,
     bumpScale: 0.12,
   })
-  pm.userData.originalMap = m.map
-  printMaterials.push(pm)
-  return pm
+  if (isPrint) {
+    soft.userData.originalMap = m.map
+    printMaterials.push(soft)
+    looks.print = 'default'
+  } else {
+    plainMaterials.push(soft)
+    looks.plain = 'default'
+  }
+  return soft
 }
 
 export default Model3DViewer

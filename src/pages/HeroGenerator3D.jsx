@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Box, Check, Download, ImageOff, Loader2, Search } from 'lucide-react'
+import { AlertTriangle, Box, Check, Download, Loader2 } from 'lucide-react'
 import { listHeroModels, POSE_MODEL3D } from '../api/heroModels'
 import { listScenes } from '../api/scenes'
 import { saveRenderedHero } from '../api/heroGenerations'
@@ -13,27 +13,16 @@ import Button from '../components/Button'
 
 // Plain studio colours that are always available, whatever the admin has set up.
 const STUDIO_COLORS = [
-  { id: 'color:#c9ccd3', label: 'Studio grey', value: '#c9ccd3' },
-  { id: 'color:#e9e2d8', label: 'Warm cream', value: '#e9e2d8' },
-  { id: 'color:#e8d3d6', label: 'Soft blush', value: '#e8d3d6' },
-  { id: 'color:#bcd0e6', label: 'Cool blue', value: '#bcd0e6' },
+  { id: 'color:#c9ccd3', label: 'Grey', value: '#c9ccd3' },
+  { id: 'color:#e9e2d8', label: 'Cream', value: '#e9e2d8' },
+  { id: 'color:#e8d3d6', label: 'Blush', value: '#e8d3d6' },
+  { id: 'color:#bcd0e6', label: 'Blue', value: '#bcd0e6' },
   { id: 'color:#2b2e36', label: 'Dark', value: '#2b2e36' },
 ]
 
 // The design is printed into a texture this many pixels across (see Model3DViewer), so this is the
 // size an image has to be to print at full sharpness.
 const TEXTURE_SIZE = 2048
-
-function StepLabel({ n, children }) {
-  return (
-    <div className="flex items-center gap-2 mb-3">
-      <span className="w-5 h-5 rounded-full bg-zinc-900 text-white text-xs font-medium flex items-center justify-center shrink-0">
-        {n}
-      </span>
-      <h2 className="text-sm font-medium text-zinc-900">{children}</h2>
-    </div>
-  )
-}
 
 function parseLayout(json) {
   try {
@@ -43,10 +32,22 @@ function parseLayout(json) {
   }
 }
 
-function Slider({ label, value, min, max, step, onChange }) {
+function Section({ title, children }) {
+  return (
+    <section>
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-2.5">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+function Slider({ label, hint, value, min, max, step, onChange }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs text-zinc-500">{label}</span>
+      <span className="flex items-center justify-between text-xs text-zinc-600">
+        {label}
+        {hint && <span className="text-zinc-400">{hint}</span>}
+      </span>
       <input
         type="range"
         min={min}
@@ -60,43 +61,92 @@ function Slider({ label, value, min, max, step, onChange }) {
   )
 }
 
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="inline-flex rounded-lg border border-zinc-200 p-0.5 bg-zinc-50 mb-3">
+      {options.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+            value === id ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function Swatch({ selected, label, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className={`relative rounded-lg border overflow-hidden text-left transition-all ${
+        selected ? 'border-indigo-500 ring-2 ring-indigo-500/25' : 'border-zinc-200 hover:border-zinc-300'
+      }`}
+    >
+      {children}
+      <div className="px-1.5 py-1 bg-white text-[11px] text-zinc-600 truncate">{label}</div>
+      {selected && (
+        <div className="absolute top-1 right-1 bg-indigo-600 rounded-full p-0.5">
+          <Check className="w-2.5 h-2.5 text-white" />
+        </div>
+      )}
+    </button>
+  )
+}
+
 export default function HeroGenerator3D() {
   const [models, setModels] = useState([])
   const [scenes, setScenes] = useState([])
   const [loading, setLoading] = useState(true)
-  const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [designFile, setDesignFile] = useState(null)
   const [loadedDesign, setLoadedDesign] = useState(null)
   const [designFit, setDesignFit] = useState({ zoom: 1, panX: 0, panY: 0 })
   const [backdropId, setBackdropId] = useState(STUDIO_COLORS[0].id)
-  const [bgTab, setBgTab] = useState('presets') // 'presets' | 'upload'
+  const [bgTab, setBgTab] = useState('presets') // 'presets' | 'upload' | 'colour'
   const [bgFile, setBgFile] = useState(null)
   const [bgUrl, setBgUrl] = useState(null)
   const bgUrlRef = useRef(null)
+  const [customColor, setCustomColor] = useState('#d9c7b8')
   const [viewRequest, setViewRequest] = useState({ name: 'back', n: 0 })
+  const [autoSpin, setAutoSpin] = useState(false)
+  const [roughness, setRoughness] = useState(0.6)
+  const [lightStrength, setLightStrength] = useState(1)
+  const [trimColor, setTrimColor] = useState('#f1f1f1')
+  const [trimTouched, setTrimTouched] = useState(false)
+  const [showFrame, setShowFrame] = useState(true)
   const [readyModelId, setReadyModelId] = useState(null)
-  const [loadedGuide, setLoadedGuide] = useState(null) // { modelId, guide } -- see DesignPlacer
+  const [loadedInfo, setLoadedInfo] = useState(null) // { modelId, guide, hasTrim }
   const [downloading, setDownloading] = useState(false)
-  const [saveNote, setSaveNote] = useState('') // what happened to the online copy of the last picture
+  const [saveNote, setSaveNote] = useState('')
   const [error, setError] = useState('')
   const viewerRef = useRef(null)
 
   useEffect(() => {
     Promise.all([listHeroModels(), listScenes()])
       .then(([modelsData, scenesData]) => {
-        setModels(modelsData.filter((m) => m.poseType === POSE_MODEL3D))
+        const threeD = modelsData.filter((m) => m.poseType === POSE_MODEL3D)
+        setModels(threeD)
         setScenes(scenesData)
+        if (threeD.length > 0) setSelectedId(threeD[0].id) // show a phone straight away
       })
       .catch(() => setError('Failed to load phone models.'))
       .finally(() => setLoading(false))
   }, [])
 
   const selectedModel = models.find((m) => m.id === selectedId)
+  const layout = useMemo(() => parseLayout(selectedModel?.printLayoutJson), [selectedModel?.printLayoutJson])
   const designImage = designFile ? loadedDesign : null
   const modelReady = selectedId !== null && readyModelId === selectedId
-  const guide = loadedGuide?.modelId === selectedId ? loadedGuide.guide : null
-  const layout = useMemo(() => parseLayout(selectedModel?.printLayoutJson), [selectedModel?.printLayoutJson])
+  const guide = loadedInfo?.modelId === selectedId ? loadedInfo.guide : null
+  const hasTrim = loadedInfo?.modelId === selectedId ? loadedInfo.hasTrim : false
 
   // turn the chosen file into an image the viewer can draw, and start its placement from scratch
   useEffect(() => {
@@ -112,21 +162,16 @@ export default function HeroGenerator3D() {
     return () => URL.revokeObjectURL(url)
   }, [designFile])
 
-  const filteredModels = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return q ? models.filter((m) => `${m.phoneName} ${m.caseType}`.toLowerCase().includes(q)) : models
-  }, [models, query])
-
-  const photoScenes = scenes // every background the admin has set up: photos and colour gradients
   const backdrop = useMemo(() => {
     if (backdropId === 'upload') return bgUrl ? { imageUrl: bgUrl } : STUDIO_COLORS[0].value
+    if (backdropId === 'custom') return customColor
     if (backdropId.startsWith('color:')) return backdropId.slice(6)
     const scene = scenes.find((s) => `scene:${s.id}` === backdropId)
     if (!scene) return STUDIO_COLORS[0].value
     return scene.backgroundImageUrl
       ? { imageUrl: resolveImageUrl(scene.backgroundImageUrl) }
       : { top: scene.backgroundTopColor, bottom: scene.backgroundBottomColor }
-  }, [backdropId, bgUrl, scenes])
+  }, [backdropId, bgUrl, customColor, scenes])
 
   // How much the design must be enlarged to fill the printable area: above ~1.5x it starts to look soft.
   const sharpness = useMemo(() => {
@@ -182,169 +227,121 @@ export default function HeroGenerator3D() {
   const canDownload = Boolean(selectedModel && designImage && modelReady && !downloading)
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
-      <div className="mb-8">
-        <h1 className="text-xl font-semibold text-zinc-900">3D Case Generator</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          Pick a phone, upload your design, and see it printed on a real 3D case from any angle. Download the picture to share.
-        </p>
+    // The page fills the screen under the top bar: the 3D view takes the room, only the options
+    // panel scrolls. On a phone the view sits on top and the panel below it.
+    <div className="flex flex-col lg:flex-row h-[calc(100dvh-3.5rem-1px)] overflow-hidden">
+      {/* ---------------- the 3D view ---------------- */}
+      <div className="relative flex-none h-[50dvh] lg:h-auto lg:flex-1 min-h-0 bg-zinc-100">
+        {selectedModel ? (
+          <>
+            <Model3DViewer
+              key={selectedModel.id}
+              ref={viewerRef}
+              className="absolute inset-0"
+              glbUrl={resolveImageUrl(selectedModel.glbUrl)}
+              printMaterialName={selectedModel.printMaterialName}
+              layout={layout}
+              designImage={designImage}
+              designFit={designFit}
+              viewRequest={viewRequest}
+              backdrop={backdrop}
+              roughness={roughness}
+              lightStrength={lightStrength}
+              autoSpin={autoSpin}
+              trimColor={hasTrim && trimTouched ? trimColor : null}
+              onLoad={({ guide: g, hasTrim: trim }) => {
+                setReadyModelId(selectedModel.id)
+                setLoadedInfo({ modelId: selectedModel.id, guide: g, hasTrim: trim })
+              }}
+              onError={() => setError('The 3D model or background could not be loaded.')}
+            />
+            {/* what the downloaded square picture covers on a wide screen */}
+            {showFrame && (
+              <div className="hidden lg:block absolute inset-y-3 left-1/2 -translate-x-1/2 aspect-square pointer-events-none rounded-md border border-dashed border-zinc-500/40" />
+            )}
+            {!modelReady && (
+              <div className="absolute inset-0 flex items-center justify-center bg-zinc-100/80 text-zinc-500 text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading 3D model...
+              </div>
+            )}
+            <div className="absolute left-3 top-3 rounded-md bg-white/80 backdrop-blur px-2.5 py-1 text-xs font-medium text-zinc-700">
+              {selectedModel.phoneName} · {selectedModel.caseType}
+            </div>
+            <div className="absolute left-0 right-0 bottom-2 text-center text-[11px] text-zinc-500 pointer-events-none">
+              Drag to turn · scroll to zoom
+            </div>
+          </>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400 px-6 text-center">
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Box className="w-9 h-9" />}
+            <p className="text-sm">
+              {loading ? 'Loading...' : 'No 3D phone models yet — an admin needs to add one under "Add Model".'}
+            </p>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* the 3D view: first on a phone-sized screen, beside the steps on a wide one */}
-        <div className="lg:col-start-2 lg:row-start-1 lg:sticky lg:top-20 self-start flex flex-col gap-3">
-          <div className="relative aspect-square w-full rounded-xl overflow-hidden border border-zinc-200 bg-zinc-100 shadow-sm">
-            {selectedModel ? (
-              <>
-                <Model3DViewer
-                  key={selectedModel.id}
-                  ref={viewerRef}
-                  className="absolute inset-0"
-                  glbUrl={resolveImageUrl(selectedModel.glbUrl)}
-                  printMaterialName={selectedModel.printMaterialName}
-                  layout={layout}
-                  designImage={designImage}
-                  designFit={designFit}
-                  viewRequest={viewRequest}
-                  backdrop={backdrop}
-                  onLoad={({ guide: g }) => {
-                    setReadyModelId(selectedModel.id)
-                    setLoadedGuide({ modelId: selectedModel.id, guide: g })
-                  }}
-                  onError={() => setError('The 3D model or background could not be loaded.')}
-                />
-                {!modelReady && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-zinc-100/80 text-zinc-500 text-sm gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading 3D model...
-                  </div>
-                )}
-              </>
+      {/* ---------------- the options ---------------- */}
+      <aside className="flex-1 lg:flex-none lg:w-[380px] min-h-0 flex flex-col bg-white border-t lg:border-t-0 lg:border-l border-zinc-200">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+          <Section title="Phone">
+            {models.length === 0 ? (
+              <p className="text-sm text-zinc-400">{loading ? 'Loading...' : 'None yet.'}</p>
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400">
-                <Box className="w-8 h-8" />
-                <p className="text-sm">Choose a phone to see it here</p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {VIEW_NAMES.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setViewRequest((r) => ({ name: v.id, n: r.n + 1 }))}
-                disabled={!selectedModel}
-                className="px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40"
-              >
-                {v.label}
-              </button>
-            ))}
-            <span className="text-xs text-zinc-400 ml-1">or drag the phone to turn it</span>
-          </div>
-
-          <Button onClick={handleDownload} disabled={!canDownload} loading={downloading} className="w-full py-3">
-            <Download className="w-4 h-4" /> {downloading ? 'Creating your image...' : 'Download image'}
-          </Button>
-          {selectedModel && !designImage && <p className="text-xs text-zinc-400 -mt-1">Upload a design to enable the download.</p>}
-          {saveNote && <p className="text-xs text-zinc-500 -mt-1 break-all">{saveNote}</p>}
-        </div>
-
-        {/* the steps */}
-        <div className="lg:col-start-1 lg:row-start-1">
-          <div className="mb-8">
-            <StepLabel n={1}>Choose a phone</StepLabel>
-            {loading ? (
-              <div className="flex items-center gap-2 text-zinc-400 text-sm py-6">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading models...
-              </div>
-            ) : models.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 text-zinc-400 py-10 border border-dashed border-zinc-200 rounded-xl">
-                <ImageOff className="w-5 h-5" />
-                <p className="text-sm">No 3D phone models yet — an admin needs to add one first.</p>
-              </div>
-            ) : (
-              <>
-                <div className="relative mb-3">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search by phone or case type..."
-                    className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 overflow-hidden">
+                  {selectedModel?.baseImageUrl ? (
+                    <img src={resolveImageUrl(selectedModel.baseImageUrl)} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Box className="w-5 h-5" />
+                  )}
                 </div>
-                {filteredModels.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 text-zinc-400 py-10 border border-dashed border-zinc-200 rounded-xl">
-                    <Search className="w-5 h-5" />
-                    <p className="text-sm">No phone models match "{query}".</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {filteredModels.map((m) => {
-                      const selected = m.id === selectedId
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => setSelectedId(m.id)}
-                          className={`relative text-left rounded-xl border p-3 flex items-center gap-3 transition-all ${
-                            selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
-                          }`}
-                        >
-                          <div className="w-12 h-12 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 overflow-hidden">
-                            {m.baseImageUrl ? <img src={resolveImageUrl(m.baseImageUrl)} alt="" className="w-full h-full object-cover" /> : <Box className="w-5 h-5" />}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium text-zinc-900 truncate">{m.phoneName}</div>
-                            <div className="text-xs text-zinc-500 truncate">{m.caseType}</div>
-                          </div>
-                          {selected && (
-                            <div className="absolute top-2 right-2 bg-indigo-600 rounded-full p-0.5">
-                              <Check className="w-3 h-3 text-white" />
-                            </div>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </>
+                <select
+                  value={selectedId ?? ''}
+                  onChange={(e) => setSelectedId(Number(e.target.value))}
+                  className="flex-1 min-w-0 border border-zinc-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                >
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.phoneName} — {m.caseType}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
-          </div>
+          </Section>
 
-          <div className="mb-8">
-            <StepLabel n={2}>Upload your design</StepLabel>
-            <DesignDropzone file={designFile} onChange={setDesignFile} />
+          <Section title="Your design">
+            <DesignDropzone compact file={designFile} onChange={setDesignFile} label="Click or drag your design" hint="PNG, JPG or WebP" />
             {sharpness?.soft && (
-              <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 text-amber-900 px-3 py-2.5 text-xs">
+              <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-amber-50 text-amber-900 px-3 py-2 text-xs">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
                 <p>
-                  This image is small for this case and may print soft. For the sharpest result use a picture at least about{' '}
-                  {sharpness.width} × {sharpness.height} pixels.
+                  Small for this case — it may print soft. Aim for about {sharpness.width} × {sharpness.height} pixels.
                 </p>
               </div>
             )}
             {designImage && (
-              <div className="mt-4 flex flex-col sm:flex-row gap-4 rounded-xl border border-zinc-200 p-3">
-                {guide && (
-                  <DesignPlacer image={designImage} guide={guide} fit={designFit} onFitChange={setDesignFit} className="w-40 shrink-0 self-center sm:self-start" />
-                )}
-                <div className="flex-1 flex flex-col gap-3 min-w-0">
+              <div className="mt-3 flex gap-3">
+                {guide && <DesignPlacer image={designImage} guide={guide} fit={designFit} onFitChange={setDesignFit} className="w-24 shrink-0 self-start" />}
+                <div className="flex-1 min-w-0 flex flex-col gap-2.5">
                   <Slider label="Zoom" value={designFit.zoom} min={1} max={3} step={0.01} onChange={(zoom) => setDesignFit((f) => ({ ...f, zoom }))} />
                   {!guide && (
                     <>
-                      <Slider label="Move left / right" value={designFit.panX} min={-1} max={1} step={0.01} onChange={(panX) => setDesignFit((f) => ({ ...f, panX }))} />
-                      <Slider label="Move up / down" value={designFit.panY} min={-1} max={1} step={0.01} onChange={(panY) => setDesignFit((f) => ({ ...f, panY }))} />
+                      <Slider label="Left / right" value={designFit.panX} min={-1} max={1} step={0.01} onChange={(panX) => setDesignFit((f) => ({ ...f, panX }))} />
+                      <Slider label="Up / down" value={designFit.panY} min={-1} max={1} step={0.01} onChange={(panY) => setDesignFit((f) => ({ ...f, panY }))} />
                     </>
                   )}
-                  {guide ? (
-                    <p className="text-xs text-zinc-500">
-                      <strong className="font-medium text-zinc-700">Drag the picture</strong> to position your design. The{' '}
-                      <span className="font-medium text-zinc-700">dark areas</span> are the camera and buttons, where nothing prints. The{' '}
-                      <span className="font-medium text-indigo-600">blue edge</span> wraps around the sides of the case.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-zinc-400">Your design wraps around the edges too. The camera and buttons stay clear automatically.</p>
-                  )}
+                  <p className="text-[11px] leading-snug text-zinc-500">
+                    {guide ? (
+                      <>
+                        <strong className="font-medium text-zinc-700">Drag the picture.</strong> Dark = camera and buttons (nothing prints).{' '}
+                        <span className="text-indigo-600">Blue</span> wraps round the sides.
+                      </>
+                    ) : (
+                      'Your design wraps around the edges too.'
+                    )}
+                  </p>
                   <button
                     type="button"
                     onClick={() => setDesignFit({ zoom: 1, panX: 0, panY: 0 })}
@@ -355,82 +352,119 @@ export default function HeroGenerator3D() {
                 </div>
               </div>
             )}
-          </div>
+          </Section>
 
-          <div className="mb-8">
-            <StepLabel n={3}>Choose a background</StepLabel>
-            <div className="inline-flex rounded-lg border border-zinc-200 p-0.5 mb-3 bg-zinc-50">
-              {[
-                ['presets', 'Presets'],
-                ['upload', 'Upload your own'],
-              ].map(([id, label]) => (
+          <Section title="Angle">
+            <div className="grid grid-cols-3 gap-1.5">
+              {VIEW_NAMES.map((v) => (
                 <button
-                  key={id}
-                  onClick={() => setBgTab(id)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    bgTab === id ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-900'
-                  }`}
+                  key={v.id}
+                  type="button"
+                  disabled={!selectedModel}
+                  onClick={() => setViewRequest((r) => ({ name: v.id, n: r.n + 1 }))}
+                  className="px-2 py-1.5 rounded-lg border border-zinc-200 bg-white text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-40"
                 >
-                  {label}
+                  {v.label}
                 </button>
               ))}
             </div>
+            <label className="mt-2.5 flex items-center gap-2 text-xs text-zinc-600 cursor-pointer w-fit">
+              <input type="checkbox" checked={autoSpin} onChange={(e) => setAutoSpin(e.target.checked)} className="accent-indigo-600" />
+              Spin slowly
+            </label>
+          </Section>
 
-            {bgTab === 'presets' ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+          <Section title="Background">
+            <Segmented
+              options={[
+                ['presets', 'Presets'],
+                ['upload', 'Your photo'],
+                ['colour', 'Colour'],
+              ]}
+              value={bgTab}
+              onChange={(tab) => {
+                setBgTab(tab)
+                if (tab === 'colour') setBackdropId('custom')
+              }}
+            />
+            {bgTab === 'presets' && (
+              <div className="grid grid-cols-3 gap-2">
                 {STUDIO_COLORS.map((c) => (
-                  <BackdropTile key={c.id} selected={backdropId === c.id} label={c.label} onClick={() => setBackdropId(c.id)}>
-                    <div className="h-12" style={{ background: c.value }} />
-                  </BackdropTile>
+                  <Swatch key={c.id} selected={backdropId === c.id} label={c.label} onClick={() => setBackdropId(c.id)}>
+                    <div className="h-9" style={{ background: c.value }} />
+                  </Swatch>
                 ))}
-                {photoScenes.map((s) => {
+                {/* The preset photos below set crossOrigin on purpose: the same file is also loaded as the 3D
+                    background in CORS mode, and if this small preview were loaded without it the browser would
+                    cache that copy (which has no CORS headers) and then reject the 3D load. */}
+                {scenes.map((s) => {
                   const id = `scene:${s.id}`
                   return (
-                    <BackdropTile key={id} selected={backdropId === id} label={s.name} onClick={() => setBackdropId(id)}>
+                    <Swatch key={id} selected={backdropId === id} label={s.name} onClick={() => setBackdropId(id)}>
                       {s.backgroundImageUrl ? (
-                        <img src={resolveImageUrl(s.backgroundImageUrl)} alt="" className="h-12 w-full object-cover" />
+                        <img src={resolveImageUrl(s.backgroundImageUrl)} crossOrigin="anonymous" alt="" className="h-9 w-full object-cover" />
                       ) : (
-                        <div className="h-12" style={{ background: `linear-gradient(to bottom, ${s.backgroundTopColor}, ${s.backgroundBottomColor})` }} />
+                        <div className="h-9" style={{ background: `linear-gradient(to bottom, ${s.backgroundTopColor}, ${s.backgroundBottomColor})` }} />
                       )}
-                    </BackdropTile>
+                    </Swatch>
                   )
                 })}
               </div>
-            ) : (
-              <DesignDropzone
-                file={bgFile}
-                onChange={chooseUpload}
-                label="Click or drag a background photo here"
-                hint="PNG, JPG, or WebP — we fit it to the frame"
-                previewAlt="Your background"
-              />
             )}
-          </div>
+            {bgTab === 'upload' && (
+              <DesignDropzone compact file={bgFile} onChange={chooseUpload} label="Click or drag a background photo" hint="We fit it to the frame" previewAlt="Your background" />
+            )}
+            {bgTab === 'colour' && (
+              <label className="flex items-center gap-3 text-xs text-zinc-600">
+                <input
+                  type="color"
+                  value={customColor}
+                  onChange={(e) => {
+                    setCustomColor(e.target.value)
+                    setBackdropId('custom')
+                  }}
+                  className="w-12 h-9 rounded border border-zinc-300 bg-white p-0.5"
+                />
+                Pick any background colour
+              </label>
+            )}
+          </Section>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          <Section title="Look">
+            <div className="flex flex-col gap-3">
+              <Slider label="Case finish" hint="glossy ← → matte" value={roughness} min={0.1} max={1} step={0.01} onChange={setRoughness} />
+              <Slider label="Light" value={lightStrength} min={0.3} max={2.5} step={0.05} onChange={setLightStrength} />
+              {hasTrim && (
+                <label className="flex items-center justify-between text-xs text-zinc-600">
+                  Case rim / inside colour
+                  <input
+                    type="color"
+                    value={trimColor}
+                    onChange={(e) => {
+                      setTrimColor(e.target.value)
+                      setTrimTouched(true)
+                    }}
+                    className="w-12 h-8 rounded border border-zinc-300 bg-white p-0.5"
+                  />
+                </label>
+              )}
+              <label className="hidden lg:flex items-center gap-2 text-xs text-zinc-600 cursor-pointer w-fit">
+                <input type="checkbox" checked={showFrame} onChange={(e) => setShowFrame(e.target.checked)} className="accent-indigo-600" />
+                Show the area the downloaded picture covers
+              </label>
+            </div>
+          </Section>
         </div>
-      </div>
+
+        <div className="border-t border-zinc-200 p-3 flex flex-col gap-2">
+          <Button onClick={handleDownload} disabled={!canDownload} loading={downloading} className="w-full py-2.5">
+            <Download className="w-4 h-4" /> {downloading ? 'Creating your image...' : 'Download image'}
+          </Button>
+          {selectedModel && !designImage && <p className="text-xs text-zinc-400 text-center">Upload a design to enable the download.</p>}
+          {saveNote && <p className="text-[11px] text-zinc-500 break-all">{saveNote}</p>}
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+      </aside>
     </div>
-  )
-}
-
-function BackdropTile({ selected, label, onClick, children }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`relative text-left rounded-xl border overflow-hidden transition-all ${
-        selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
-      }`}
-    >
-      {children}
-      <div className="px-2 py-1.5 bg-white">
-        <div className="text-xs text-zinc-700 truncate">{label}</div>
-      </div>
-      {selected && (
-        <div className="absolute top-1.5 right-1.5 bg-indigo-600 rounded-full p-0.5">
-          <Check className="w-3 h-3 text-white" />
-        </div>
-      )}
-    </button>
   )
 }

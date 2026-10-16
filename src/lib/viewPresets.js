@@ -5,4 +5,5 @@ export const VIEW_NAMES = [
   { id: 'left', label: 'Left side' },
   { id: 'right', label: 'Right side' },
   { id: 'three', label: '3/4' },
+  { id: 'tilt', label: 'Tilted' },
 ]

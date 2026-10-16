@@ -18,6 +18,7 @@ const VIEWS = {
   left: [-0.38, 0.015, 0],
   right: [0.38, 0.015, 0],
   three: [-0.2, 0.09, -0.3],
+  tilt: [0.22, 0.15, -0.28],
 }
 
 function makeBackdrop(hex) {
@@ -226,8 +227,12 @@ function disposeTree(root, keep = []) {
 ///   designImage       an HTMLImageElement/canvas to print, or null to show the model's own material
 ///   viewRequest       { name, n } -- change n to re-apply the same named view
 ///   backdrop          hex colour of the studio backdrop
+///   roughness         0.1 (glossy) .. 1 (matte) for the case surface, default 0.6
+///   lightStrength     scales every light, default 1
+///   autoSpin          slowly turns the phone while true
+///   trimColor         hex colour of the unprinted case parts (the material named CASE_PLAIN), if any
 ///   onLoad / onError  called when the model finishes loading or fails; onLoad receives
-///                     { guide } -- see buildPrintGuide -- when a layout was given
+///                     { guide, hasTrim } -- see buildPrintGuide -- guide only when a layout was given
 ///
 /// ref.capture(size, { view }) resolves to a square PNG blob (size x size pixels) of the model, rendered
 /// at that fixed resolution whatever size the on-screen frame is, so a phone and a desktop produce the
@@ -236,7 +241,10 @@ function disposeTree(root, keep = []) {
 /// It draws a new frame only when something changed (the camera moved, a design, background or model
 /// changed, or the frame was resized) instead of 60 times a second, which matters for a phone's battery.
 const Model3DViewer = forwardRef(function Model3DViewer(
-  { glbUrl, printMaterialName, layout, designImage, designFit, viewRequest, backdrop = '#c9ccd3', onLoad, onError, className = '' },
+  {
+    glbUrl, printMaterialName, layout, designImage, designFit, viewRequest, backdrop = '#c9ccd3',
+    roughness = 0.6, lightStrength = 1, autoSpin = false, trimColor = null, onLoad, onError, className = '',
+  },
   ref,
 ) {
   const mountRef = useRef(null)
@@ -246,7 +254,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   // the model loads asynchronously, so applyDesign must read the newest design, not the one from the
   // render in which loading started
   const latest = useRef({})
-  latest.current = { designImage, layout, designFit }
+  latest.current = { designImage, layout, designFit, roughness, trimColor }
 
   // ---- one-time scene setup ----
   useEffect(() => {
@@ -320,6 +328,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     }
     let needsRender = true
     let frames = 0
+    const state = s.current
     const invalidate = () => {
       needsRender = true
     }
@@ -338,6 +347,10 @@ const Model3DViewer = forwardRef(function Model3DViewer(
 
     controls.addEventListener('change', invalidate)
     renderer.setAnimationLoop(() => {
+      if (state.autoSpin) {
+        pivot.rotation.y += 0.006
+        needsRender = true
+      }
       const moving = controls.update() // true while the user drags or the turn is still easing out
       if (!moving && !needsRender) return
       needsRender = false
@@ -345,7 +358,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       mount.dataset.frames = String(++frames) // read by tests to prove an idle view draws nothing
     })
 
-    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground, invalidate })
+    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground, invalidate, key, rim })
 
     return () => {
       ro.disconnect()
@@ -410,23 +423,26 @@ const Model3DViewer = forwardRef(function Model3DViewer(
         blob.renderOrder = 1
 
         const printMaterials = []
+        const plainMaterials = []
         const grain = makeGrainTexture()
         gltf.scene.traverse((o) => {
           if (!o.isMesh) return
           o.castShadow = true
           o.receiveShadow = true
           o.material = Array.isArray(o.material)
-            ? o.material.map((m) => upgradePrint(m, printMaterialName, grain, printMaterials))
-            : upgradePrint(o.material, printMaterialName, grain, printMaterials)
+            ? o.material.map((m) => upgradePrint(m, printMaterialName, grain, printMaterials, plainMaterials))
+            : upgradePrint(o.material, printMaterialName, grain, printMaterials, plainMaterials)
         })
 
         pivot.add(holder)
         pivot.add(blob)
-        Object.assign(s.current, { printMaterials })
+        Object.assign(s.current, { printMaterials, plainMaterials })
+        pivot.rotation.y = 0
         applyDesign()
+        applyLook()
         s.current.invalidate()
         const guide = layout && printMeshes.length ? buildPrintGuide(printMeshes, printMaterialName, layout) : null
-        cb.current.onLoad?.({ printMeshCount: printMeshes.length, guide })
+        cb.current.onLoad?.({ printMeshCount: printMeshes.length, guide, hasTrim: plainMaterials.length > 0 })
       },
       undefined,
       (err) => cb.current.onError?.(err),
@@ -436,6 +452,30 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [glbUrl, printMaterialName])
+
+  // ---- surface look: roughness of the case, colour of the plain trim ----
+  function applyLook() {
+    const st = s.current
+    const { roughness: rough, trimColor: trim } = latest.current
+    for (const m of [...(st.printMaterials || []), ...(st.plainMaterials || [])]) m.roughness = rough
+    if (trim) for (const m of st.plainMaterials || []) m.color.set(trim)
+    st.invalidate?.()
+  }
+  useEffect(applyLook, [roughness, trimColor])
+
+  useEffect(() => {
+    const st = s.current
+    if (!st.key) return
+    st.key.intensity = 1.5 * lightStrength
+    st.rim.intensity = 0.9 * lightStrength
+    st.scene.environmentIntensity = 0.8 * lightStrength
+    st.invalidate()
+  }, [lightStrength])
+
+  useEffect(() => {
+    s.current.autoSpin = autoSpin
+    s.current.invalidate?.()
+  }, [autoSpin])
 
   // ---- print the design (or show the model's own material when there is none) ----
   function applyDesign() {
@@ -575,7 +615,17 @@ const Model3DViewer = forwardRef(function Model3DViewer(
 
 /// Replaces the printable material with a softly-matte physical one (keeping the model's own map so
 /// it can be restored); leaves every other material exactly as the file made it.
-function upgradePrint(m, printName, grain, printMaterials) {
+function upgradePrint(m, printName, grain, printMaterials, plainMaterials) {
+  // the unprinted case parts (our models call that material CASE_PLAIN) get the same soft silicone look
+  // and a colour the customer can change
+  if (m.name === 'CASE_PLAIN' && m.name !== printName) {
+    const plain = new THREE.MeshPhysicalMaterial({
+      name: m.name, color: m.color, roughness: 0.6, metalness: 0,
+      sheen: 0.18, sheenRoughness: 0.7, sheenColor: new THREE.Color('#d8dce6'), bumpMap: grain, bumpScale: 0.12,
+    })
+    plainMaterials.push(plain)
+    return plain
+  }
   if (m.name !== printName) return m
   const pm = new THREE.MeshPhysicalMaterial({
     name: m.name,

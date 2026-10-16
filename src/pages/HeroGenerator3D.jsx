@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Box, Check, Download, ImageOff, Loader2, Search } from 'lucide-react'
 import { listHeroModels, POSE_MODEL3D } from '../api/heroModels'
 import { listScenes } from '../api/scenes'
+import { saveRenderedHero } from '../api/heroGenerations'
 import { resolveImageUrl } from '../api/client'
 import { downloadBlob, fileSafeName, withWatermark } from '../lib/exportImage'
 import { VIEW_NAMES } from '../lib/viewPresets'
@@ -75,6 +76,7 @@ export default function HeroGenerator3D() {
   const [viewRequest, setViewRequest] = useState({ name: 'back', n: 0 })
   const [readyModelId, setReadyModelId] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [saveNote, setSaveNote] = useState('') // what happened to the online copy of the last picture
   const [error, setError] = useState('')
   const viewerRef = useRef(null)
 
@@ -144,12 +146,31 @@ export default function HeroGenerator3D() {
     if (!viewerRef.current || !designImage) return
     setDownloading(true)
     setError('')
+    setSaveNote('')
+    let picture
     try {
       const raw = await viewerRef.current.capture(2048)
-      const withMark = await withWatermark(raw)
-      downloadBlob(withMark, `${fileSafeName(selectedModel.phoneName)}-case.png`)
+      picture = await withWatermark(raw)
+      downloadBlob(picture, `${fileSafeName(selectedModel.phoneName)}-case.png`)
     } catch {
       setError('Could not create the image. Try again.')
+      setDownloading(false)
+      return
+    }
+
+    // The customer already has their picture. Keeping a copy on the server is a bonus: if it fails
+    // they still got what they came for, so it only ever adds a note, never an error.
+    try {
+      const saved = await saveRenderedHero({
+        heroModelId: selectedModel.id,
+        designFile,
+        outputBlob: picture,
+        sceneId: backdropId.startsWith('scene:') ? Number(backdropId.slice(6)) : null,
+        backgroundFile: backdropId === 'upload' ? bgFile : null,
+      })
+      setSaveNote(`A copy is saved online: ${resolveImageUrl(saved.outputImageUrl)}`)
+    } catch {
+      setSaveNote('Your picture was downloaded. We could not keep an online copy this time.')
     } finally {
       setDownloading(false)
     }
@@ -218,6 +239,7 @@ export default function HeroGenerator3D() {
             <Download className="w-4 h-4" /> {downloading ? 'Creating your image...' : 'Download image'}
           </Button>
           {selectedModel && !designImage && <p className="text-xs text-zinc-400 -mt-1">Upload a design to enable the download.</p>}
+          {saveNote && <p className="text-xs text-zinc-500 -mt-1 break-all">{saveNote}</p>}
         </div>
 
         {/* the steps */}

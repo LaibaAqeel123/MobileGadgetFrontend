@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Trash2, Smartphone, Loader2, Search } from 'lucide-react'
-import { listHeroModels, createHeroModel, deleteHeroModel } from '../../api/heroModels'
+import { listHeroModels, createHeroModel, deleteHeroModel, isModel3D } from '../../api/heroModels'
 import { resolveImageUrl } from '../../api/client'
 import ImageUploadField from '../../components/ImageUploadField'
 import Button from '../../components/Button'
@@ -30,7 +30,8 @@ export default function HeroModelManager() {
   async function refresh() {
     setLoading(true)
     try {
-      setModels(await listHeroModels())
+      // 3D models are managed on their own page; they have no photos to show here
+      setModels((await listHeroModels()).filter((m) => !isModel3D(m)))
     } catch {
       setError('Failed to load models.')
     } finally {

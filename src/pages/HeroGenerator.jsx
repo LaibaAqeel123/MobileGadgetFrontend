@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Download, RotateCcw, RotateCw, Loader2, ImageOff, Search, Smartphone } from 'lucide-react'
-import { listHeroModels } from '../api/heroModels'
+import { listHeroModels, isModel3D } from '../api/heroModels'
 import { listScenes } from '../api/scenes'
 import { generateHero } from '../api/heroGenerations'
 import { resolveImageUrl } from '../api/client'
@@ -44,7 +44,8 @@ export default function HeroGenerator() {
   useEffect(() => {
     Promise.all([listHeroModels(), listScenes()])
       .then(([modelsData, scenesData]) => {
-        setModels(modelsData)
+        // this screen renders from photos; 3D models have their own generator (HeroGenerator3D)
+        setModels(modelsData.filter((m) => !isModel3D(m)))
         setScenes(scenesData)
         const defaultScene = scenesData.find((s) => s.isDefault) ?? scenesData[0]
         if (defaultScene) setSelectedSceneId(defaultScene.id)

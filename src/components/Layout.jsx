@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Sparkles, LogOut } from 'lucide-react'
 import { useAuth } from '../state/AuthContext'
+import { SHOW_CLASSIC_2D } from '../config/features'
 
 const navLinkClass = ({ isActive }) =>
   `px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
@@ -28,14 +29,24 @@ export default function Layout({ children }) {
           {user && (
             <div className="flex items-center gap-2 sm:gap-4 min-w-0">
               <nav className="flex items-center gap-1 overflow-x-auto">
-                <NavLink to="/generator" className={navLinkClass}>
+                <NavLink to="/generator" end className={navLinkClass}>
                   Generator
                 </NavLink>
+                {SHOW_CLASSIC_2D && (
+                  <NavLink to="/generator/classic" className={navLinkClass}>
+                    Classic generator
+                  </NavLink>
+                )}
                 {isAdmin && (
                   <>
                     <NavLink to="/admin" end className={navLinkClass}>
-                      Admin
+                      Add Model
                     </NavLink>
+                    {SHOW_CLASSIC_2D && (
+                      <NavLink to="/admin/classic" className={navLinkClass}>
+                        Classic models
+                      </NavLink>
+                    )}
                     <NavLink to="/admin/backgrounds" className={navLinkClass}>
                       Backgrounds
                     </NavLink>

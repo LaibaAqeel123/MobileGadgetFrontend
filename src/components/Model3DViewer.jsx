@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
+import { drawDesignFit } from '../lib/designFit'
 
 // Whatever units the file was exported in, the model is scaled so its longest side is this, so the
 // camera distances and the shadow below never depend on the file.
@@ -131,6 +132,90 @@ function normalizeOrientation(holder, printMeshes) {
   }
 }
 
+/// Draws, in the printable rectangle's own coordinates, where the model really has printable surface:
+/// `printable` is every printable triangle, `back` only those facing the camera from behind. Whatever
+/// the printable rectangle contains that is NOT painted is a hole in the case (camera window, button
+/// openings) or empty corner, so the customer can be shown where nothing will print -- read straight
+/// from the model, with no extra data from the admin. Must be called after the model has been turned
+/// to face -Z (normalizeOrientation) and its matrices updated.
+function buildPrintGuide(printMeshes, printMaterialName, layout) {
+  const H = 512
+  const aspect = (layout.u1 - layout.u0) / (layout.v1 - layout.v0)
+  const W = Math.max(1, Math.round(H * aspect))
+  const make = () => {
+    const c = document.createElement('canvas')
+    c.width = W
+    c.height = H
+    const g = c.getContext('2d')
+    g.fillStyle = '#fff'
+    g.strokeStyle = '#fff'
+    g.lineWidth = 1.2 // hides hairline gaps between neighbouring triangles
+    g.lineJoin = 'round'
+    return { canvas: c, g }
+  }
+  const printable = make()
+  const back = make()
+
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  const c = new THREE.Vector3()
+  const n = new THREE.Vector3()
+  const px = (u) => ((u - layout.u0) / (layout.u1 - layout.u0)) * W
+  const py = (v) => ((v - layout.v0) / (layout.v1 - layout.v0)) * H
+
+  for (const mesh of printMeshes) {
+    const geo = mesh.geometry
+    const pos = geo.attributes.position
+    const uv = geo.attributes.uv
+    if (!uv) continue
+    const idx = geo.index
+    const total = idx ? idx.count : pos.count
+    const mats = matList(mesh.material)
+    const ranges = geo.groups.length ? geo.groups : [{ start: 0, count: total, materialIndex: 0 }]
+    for (const grp of ranges) {
+      if (mats[grp.materialIndex ?? 0]?.name !== printMaterialName) continue
+      const end = Math.min(grp.start + grp.count, total)
+      for (let t = grp.start; t + 2 < end; t += 3) {
+        const i0 = idx ? idx.getX(t) : t
+        const i1 = idx ? idx.getX(t + 1) : t + 1
+        const i2 = idx ? idx.getX(t + 2) : t + 2
+        a.fromBufferAttribute(pos, i0).applyMatrix4(mesh.matrixWorld)
+        b.fromBufferAttribute(pos, i1).applyMatrix4(mesh.matrixWorld)
+        c.fromBufferAttribute(pos, i2).applyMatrix4(mesh.matrixWorld)
+        n.crossVectors(b.clone().sub(a), c.clone().sub(a)).normalize()
+        const isBack = n.z < -0.7
+        for (const target of isBack ? [printable, back] : [printable]) {
+          const g = target.g
+          g.beginPath()
+          g.moveTo(px(uv.getX(i0)), py(uv.getY(i0)))
+          g.lineTo(px(uv.getX(i1)), py(uv.getY(i1)))
+          g.lineTo(px(uv.getX(i2)), py(uv.getY(i2)))
+          g.closePath()
+          g.fill()
+          g.stroke()
+        }
+      }
+    }
+  }
+  return { width: W, height: H, printable: printable.canvas, back: back.canvas }
+}
+
+/// Frees the GPU memory of a loaded model (geometry, materials and their textures). Without this,
+/// switching phones a few times on a phone would steadily eat memory. `keep` lists textures that
+/// outlive the model (the shared design texture).
+function disposeTree(root, keep = []) {
+  root.traverse((o) => {
+    if (o.geometry) o.geometry.dispose()
+    if (!o.material) return
+    for (const m of matList(o.material)) {
+      for (const value of Object.values(m)) {
+        if (value && value.isTexture && !keep.includes(value)) value.dispose()
+      }
+      m.dispose()
+    }
+  })
+}
+
 /// Shows a 3D phone-case model and prints a design onto its printable material.
 ///
 /// props:
@@ -141,11 +226,15 @@ function normalizeOrientation(holder, printMeshes) {
 ///   designImage       an HTMLImageElement/canvas to print, or null to show the model's own material
 ///   viewRequest       { name, n } -- change n to re-apply the same named view
 ///   backdrop          hex colour of the studio backdrop
-///   onLoad / onError  called when the model finishes loading or fails
+///   onLoad / onError  called when the model finishes loading or fails; onLoad receives
+///                     { guide } -- see buildPrintGuide -- when a layout was given
 ///
-/// ref.capture(size) resolves to a square PNG blob (size x size pixels) of the current view, rendered
+/// ref.capture(size, { view }) resolves to a square PNG blob (size x size pixels) of the model, rendered
 /// at that fixed resolution whatever size the on-screen frame is, so a phone and a desktop produce the
-/// same quality of picture.
+/// same quality of picture. `view` (a name from VIEWS) renders from that angle instead of the current one.
+///
+/// It draws a new frame only when something changed (the camera moved, a design, background or model
+/// changed, or the frame was resized) instead of 60 times a second, which matters for a phone's battery.
 const Model3DViewer = forwardRef(function Model3DViewer(
   { glbUrl, printMaterialName, layout, designImage, designFit, viewRequest, backdrop = '#c9ccd3', onLoad, onError, className = '' },
   ref,
@@ -162,8 +251,10 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   // ---- one-time scene setup ----
   useEffect(() => {
     const mount = mountRef.current
+    // phones and low-core machines get cheaper settings: a lower pixel ratio and a smaller shadow map
+    const lowPower = window.matchMedia?.('(pointer: coarse)').matches || (navigator.hardwareConcurrency ?? 8) <= 4
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPower ? 1.5 : 2))
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.VSMShadowMap
@@ -189,7 +280,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     key.castShadow = true
     key.shadow.radius = 14
     key.shadow.blurSamples = 24
-    key.shadow.mapSize.set(2048, 2048)
+    key.shadow.mapSize.set(lowPower ? 1024 : 2048, lowPower ? 1024 : 2048)
     key.shadow.camera.left = -0.3
     key.shadow.camera.right = 0.3
     key.shadow.camera.top = 0.3
@@ -227,6 +318,11 @@ const Model3DViewer = forwardRef(function Model3DViewer(
         t.offset.y = (1 - t.repeat.y) / 2
       }
     }
+    let needsRender = true
+    let frames = 0
+    const invalidate = () => {
+      needsRender = true
+    }
     const resize = () => {
       const w = mount.clientWidth || 1
       const h = mount.clientHeight || 1
@@ -234,21 +330,28 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       camera.aspect = w / h
       camera.updateProjectionMatrix()
       fitBackground()
+      invalidate()
     }
     const ro = new ResizeObserver(resize)
     ro.observe(mount)
     resize()
 
+    controls.addEventListener('change', invalidate)
     renderer.setAnimationLoop(() => {
-      controls.update()
+      const moving = controls.update() // true while the user drags or the turn is still easing out
+      if (!moving && !needsRender) return
+      needsRender = false
       renderer.render(scene, camera)
+      mount.dataset.frames = String(++frames) // read by tests to prove an idle view draws nothing
     })
 
-    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground })
+    Object.assign(s.current, { renderer, scene, camera, controls, floor, pivot, envTexture, pmrem, resize, fitBackground, invalidate })
 
     return () => {
       ro.disconnect()
       renderer.setAnimationLoop(null)
+      disposeTree(pivot, [s.current.designTex])
+      s.current.designTex?.dispose()
       controls.dispose()
       renderer.dispose()
       envTexture.dispose()
@@ -270,7 +373,11 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       (gltf) => {
         if (cancelled || !s.current.scene) return
         const { pivot, floor } = s.current
-        while (pivot.children.length) pivot.remove(pivot.children[0])
+        while (pivot.children.length) {
+          const old = pivot.children[0]
+          pivot.remove(old)
+          disposeTree(old, [s.current.designTex])
+        }
 
         const holder = new THREE.Group()
         holder.add(gltf.scene)
@@ -317,7 +424,9 @@ const Model3DViewer = forwardRef(function Model3DViewer(
         pivot.add(blob)
         Object.assign(s.current, { printMaterials })
         applyDesign()
-        cb.current.onLoad?.({ printMeshCount: printMeshes.length })
+        s.current.invalidate()
+        const guide = layout && printMeshes.length ? buildPrintGuide(printMeshes, printMaterialName, layout) : null
+        cb.current.onLoad?.({ printMeshCount: printMeshes.length, guide })
       },
       undefined,
       (err) => cb.current.onError?.(err),
@@ -338,6 +447,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
         m.map = m.userData.originalMap || null
         m.needsUpdate = true
       }
+      st.invalidate?.()
       return
     }
     if (!st.designCanvas) {
@@ -350,36 +460,21 @@ const Model3DViewer = forwardRef(function Model3DViewer(
       st.designTex.anisotropy = st.renderer.capabilities.getMaxAnisotropy()
     }
     const ctx = st.designCanvas.getContext('2d')
-    const rx = layout.u0 * TEX
-    const ry = layout.v0 * TEX
-    const rw = (layout.u1 - layout.u0) * TEX
-    const rh = (layout.v1 - layout.v0) * TEX
-    const iw = designImage.naturalWidth || designImage.width
-    const ih = designImage.naturalHeight || designImage.height
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, TEX, TEX)
-    // cover-fit the design into the printable rectangle, then apply the customer's zoom and move
-    // (panX/panY run -1..1 across however much of the design is hidden past the edge)
-    const zoom = designFit?.zoom ?? 1
-    const k = Math.max(rw / iw, rh / ih) * zoom
-    const dw = iw * k
-    const dh = ih * k
-    const maxX = Math.max(0, (dw - rw) / 2)
-    const maxY = Math.max(0, (dh - rh) / 2)
-    const dx = rx + (rw - dw) / 2 - (designFit?.panX ?? 0) * maxX
-    const dy = ry + (rh - dh) / 2 - (designFit?.panY ?? 0) * maxY
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(rx, ry, rw, rh)
-    ctx.clip()
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(designImage, dx, dy, dw, dh)
-    ctx.restore()
+    // the same function the placement guide uses, so what the customer drags is what gets printed
+    drawDesignFit(
+      ctx,
+      designImage,
+      { x: layout.u0 * TEX, y: layout.v0 * TEX, w: (layout.u1 - layout.u0) * TEX, h: (layout.v1 - layout.v0) * TEX },
+      designFit,
+    )
     st.designTex.needsUpdate = true
     for (const m of st.printMaterials) {
       m.map = st.designTex
       m.needsUpdate = true
     }
+    st.invalidate?.()
   }
   useEffect(applyDesign, [designImage, layout, designFit?.zoom, designFit?.panX, designFit?.panY])
 
@@ -392,6 +487,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     st.camera.position.set(...p)
     st.controls.target.set(0, 0, 0)
     st.controls.update()
+    st.invalidate()
   }, [viewRequest])
 
   // ---- backdrop: colour string, { top, bottom } gradient, or { imageUrl } photo ----
@@ -403,6 +499,7 @@ const Model3DViewer = forwardRef(function Model3DViewer(
     const set = (tex) => {
       st.scene.background?.dispose?.()
       st.scene.background = tex
+      st.invalidate()
     }
     if (typeof backdrop === 'string') {
       set(makeBackdrop(backdrop))
@@ -434,10 +531,24 @@ const Model3DViewer = forwardRef(function Model3DViewer(
   }, [backdropKey])
 
   useImperativeHandle(ref, () => ({
-    capture: (size = 2048) =>
+    capture: (size = 2048, { view, design } = {}) =>
       new Promise((resolve) => {
-        const { renderer, scene, camera, resize, fitBackground } = s.current
+        const { renderer, scene, camera, controls, resize, fitBackground } = s.current
+        // `design` shows a different picture on the case for this one shot only (the list thumbnail)
+        const previousLatest = latest.current
+        if (design) {
+          latest.current = { ...previousLatest, designImage: design, designFit: { zoom: 1, panX: 0, panY: 0 } }
+          applyDesign()
+        }
         const prevRatio = renderer.getPixelRatio()
+        const prevPos = camera.position.clone()
+        const prevTarget = controls.target.clone()
+        if (view && VIEWS[view]) {
+          camera.position.set(...VIEWS[view])
+          controls.target.set(0, 0, 0)
+          // the controls only turn the camera on their next update, and this renders straight away
+          camera.lookAt(controls.target)
+        }
         renderer.setPixelRatio(1)
         renderer.setSize(size, size, false)
         camera.aspect = 1
@@ -445,7 +556,14 @@ const Model3DViewer = forwardRef(function Model3DViewer(
         fitBackground()
         renderer.render(scene, camera)
         renderer.domElement.toBlob((blob) => {
+          camera.position.copy(prevPos)
+          controls.target.copy(prevTarget)
+          camera.lookAt(prevTarget)
           renderer.setPixelRatio(prevRatio)
+          if (design) {
+            latest.current = previousLatest
+            applyDesign()
+          }
           resize()
           resolve(blob)
         }, 'image/png')

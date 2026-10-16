@@ -7,6 +7,7 @@ import { resolveImageUrl } from '../api/client'
 import { downloadBlob, fileSafeName, withWatermark } from '../lib/exportImage'
 import { VIEW_NAMES } from '../lib/viewPresets'
 import DesignDropzone from '../components/DesignDropzone'
+import DesignPlacer from '../components/DesignPlacer'
 import Model3DViewer from '../components/Model3DViewer'
 import Button from '../components/Button'
 
@@ -75,6 +76,7 @@ export default function HeroGenerator3D() {
   const bgUrlRef = useRef(null)
   const [viewRequest, setViewRequest] = useState({ name: 'back', n: 0 })
   const [readyModelId, setReadyModelId] = useState(null)
+  const [loadedGuide, setLoadedGuide] = useState(null) // { modelId, guide } -- see DesignPlacer
   const [downloading, setDownloading] = useState(false)
   const [saveNote, setSaveNote] = useState('') // what happened to the online copy of the last picture
   const [error, setError] = useState('')
@@ -93,6 +95,7 @@ export default function HeroGenerator3D() {
   const selectedModel = models.find((m) => m.id === selectedId)
   const designImage = designFile ? loadedDesign : null
   const modelReady = selectedId !== null && readyModelId === selectedId
+  const guide = loadedGuide?.modelId === selectedId ? loadedGuide.guide : null
   const layout = useMemo(() => parseLayout(selectedModel?.printLayoutJson), [selectedModel?.printLayoutJson])
 
   // turn the chosen file into an image the viewer can draw, and start its placement from scratch
@@ -204,7 +207,10 @@ export default function HeroGenerator3D() {
                   designFit={designFit}
                   viewRequest={viewRequest}
                   backdrop={backdrop}
-                  onLoad={() => setReadyModelId(selectedModel.id)}
+                  onLoad={({ guide: g }) => {
+                    setReadyModelId(selectedModel.id)
+                    setLoadedGuide({ modelId: selectedModel.id, guide: g })
+                  }}
                   onError={() => setError('The 3D model or background could not be loaded.')}
                 />
                 {!modelReady && (
@@ -284,8 +290,8 @@ export default function HeroGenerator3D() {
                             selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-zinc-200 hover:border-zinc-300'
                           }`}
                         >
-                          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                            <Box className="w-5 h-5" />
+                          <div className="w-12 h-12 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 overflow-hidden">
+                            {m.baseImageUrl ? <img src={resolveImageUrl(m.baseImageUrl)} alt="" className="w-full h-full object-cover" /> : <Box className="w-5 h-5" />}
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-medium text-zinc-900 truncate">{m.phoneName}</div>
@@ -318,13 +324,35 @@ export default function HeroGenerator3D() {
               </div>
             )}
             {designImage && (
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-xl border border-zinc-200 p-3">
-                <Slider label="Zoom" value={designFit.zoom} min={1} max={3} step={0.01} onChange={(zoom) => setDesignFit((f) => ({ ...f, zoom }))} />
-                <Slider label="Move left / right" value={designFit.panX} min={-1} max={1} step={0.01} onChange={(panX) => setDesignFit((f) => ({ ...f, panX }))} />
-                <Slider label="Move up / down" value={designFit.panY} min={-1} max={1} step={0.01} onChange={(panY) => setDesignFit((f) => ({ ...f, panY }))} />
-                <p className="sm:col-span-3 text-xs text-zinc-400">
-                  Your design wraps around the edges too. The camera and buttons stay clear automatically.
-                </p>
+              <div className="mt-4 flex flex-col sm:flex-row gap-4 rounded-xl border border-zinc-200 p-3">
+                {guide && (
+                  <DesignPlacer image={designImage} guide={guide} fit={designFit} onFitChange={setDesignFit} className="w-40 shrink-0 self-center sm:self-start" />
+                )}
+                <div className="flex-1 flex flex-col gap-3 min-w-0">
+                  <Slider label="Zoom" value={designFit.zoom} min={1} max={3} step={0.01} onChange={(zoom) => setDesignFit((f) => ({ ...f, zoom }))} />
+                  {!guide && (
+                    <>
+                      <Slider label="Move left / right" value={designFit.panX} min={-1} max={1} step={0.01} onChange={(panX) => setDesignFit((f) => ({ ...f, panX }))} />
+                      <Slider label="Move up / down" value={designFit.panY} min={-1} max={1} step={0.01} onChange={(panY) => setDesignFit((f) => ({ ...f, panY }))} />
+                    </>
+                  )}
+                  {guide ? (
+                    <p className="text-xs text-zinc-500">
+                      <strong className="font-medium text-zinc-700">Drag the picture</strong> to position your design. The{' '}
+                      <span className="font-medium text-zinc-700">dark areas</span> are the camera and buttons, where nothing prints. The{' '}
+                      <span className="font-medium text-indigo-600">blue edge</span> wraps around the sides of the case.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-zinc-400">Your design wraps around the edges too. The camera and buttons stay clear automatically.</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDesignFit({ zoom: 1, panX: 0, panY: 0 })}
+                    className="self-start text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                  >
+                    Reset position
+                  </button>
+                </div>
               </div>
             )}
           </div>

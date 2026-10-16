@@ -68,3 +68,31 @@ export function makeTestDesignImage() {
     img.src = c.toDataURL('image/png')
   })
 }
+
+// A calm pastel design used only for the little list thumbnail of a 3D model, so the thumbnail shows
+// the phone and case rather than the loud test pattern.
+export function makeThumbnailDesignImage() {
+  const c = document.createElement('canvas')
+  c.width = 700
+  c.height = 1280
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0, 0, c.width, c.height)
+  grad.addColorStop(0, '#a5b4fc')
+  grad.addColorStop(0.55, '#c4b5fd')
+  grad.addColorStop(1, '#fbcfe8')
+  g.fillStyle = grad
+  g.fillRect(0, 0, c.width, c.height)
+  g.fillStyle = 'rgba(255,255,255,0.22)'
+  g.beginPath()
+  g.arc(c.width * 0.8, c.height * 0.72, 330, 0, Math.PI * 2)
+  g.fill()
+  g.beginPath()
+  g.arc(c.width * 0.15, c.height * 0.9, 220, 0, Math.PI * 2)
+  g.fill()
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = c.toDataURL('image/png')
+  })
+}

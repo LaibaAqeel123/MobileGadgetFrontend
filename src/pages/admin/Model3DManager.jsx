@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Box, CheckCircle2, Loader2, Pencil, Trash2, Upload, X, XCircle } from 'lucide-react'
-import { deleteHeroModel, inspectGlb, listHeroModels, POSE_MODEL3D, reinspectGlb, saveModel3D } from '../../api/heroModels'
+import { deleteHeroModel, inspectGlb, listHeroModels, POSE_MODEL3D, reinspectGlb, saveModel3D, uploadImage } from '../../api/heroModels'
 import { resolveImageUrl } from '../../api/client'
-import { makeTestDesignImage } from '../../lib/testDesign'
+import { makeTestDesignImage, makeThumbnailDesignImage } from '../../lib/testDesign'
 import Model3DViewer from '../../components/Model3DViewer'
 import { VIEW_NAMES } from '../../lib/viewPresets'
 import Button from '../../components/Button'
@@ -114,9 +114,16 @@ export default function Model3DManager() {
   const [backdrop, setBackdrop] = useState(BACKDROPS[0].value)
   const [loadStatus, setLoadStatus] = useState('')
   const fileInputRef = useRef(null)
+  const viewerRef = useRef(null)
+  const thumbDesignRef = useRef(null)
+  // what the model being edited was saved with, so a rename keeps its thumbnail instead of redrawing it
+  const [savedState, setSavedState] = useState(null) // { glbUrl, baseImageUrl }
 
   useEffect(() => {
     makeTestDesignImage().then(setTestDesign)
+    makeThumbnailDesignImage().then((img) => {
+      thumbDesignRef.current = img
+    })
     refresh()
   }, [])
 
@@ -136,6 +143,7 @@ export default function Model3DManager() {
     setPhoneName('')
     setCaseType('')
     setEditingId(null)
+    setSavedState(null)
     setDraft(null)
     setError('')
     setLoadStatus('')
@@ -173,6 +181,7 @@ export default function Model3DManager() {
 
   function handleEdit(m) {
     setEditingId(m.id)
+    setSavedState({ glbUrl: m.glbUrl, baseImageUrl: m.baseImageUrl || '' })
     setPhoneName(m.phoneName)
     setCaseType(m.caseType)
     setError('')
@@ -193,12 +202,25 @@ export default function Model3DManager() {
     setSaving(true)
     setError('')
     try {
+      // A new or replaced model gets a fresh thumbnail (a 3/4 view with a calm design on it); a rename
+      // keeps the old one. The thumbnail is a nicety, so failing to make it never blocks saving.
+      let baseImageUrl = savedState?.baseImageUrl || ''
+      const fileChanged = !savedState || savedState.glbUrl !== draft.glbUrl
+      if (fileChanged && viewerRef.current && thumbDesignRef.current) {
+        try {
+          const blob = await viewerRef.current.capture(512, { view: 'three', design: thumbDesignRef.current })
+          baseImageUrl = await uploadImage(new File([blob], 'thumbnail.png', { type: 'image/png' }))
+        } catch {
+          baseImageUrl = ''
+        }
+      }
       await saveModel3D({
         id: editingId,
         phoneName: phoneName.trim(),
         caseType: caseType.trim(),
         glbUrl: draft.glbUrl,
         printMaterialName: draft.printMaterialName,
+        baseImageUrl,
       })
       resetForm()
       await refresh()
@@ -284,6 +306,7 @@ export default function Model3DManager() {
               </div>
             </div>
             <Model3DViewer
+              ref={viewerRef}
               className="h-[480px] w-full rounded-xl overflow-hidden bg-zinc-100"
               glbUrl={resolveImageUrl(draft.glbUrl)}
               printMaterialName={draft.printMaterialName}
@@ -354,8 +377,8 @@ export default function Model3DManager() {
           {models.map((m) => (
             <div key={m.id} className="bg-white border border-zinc-200 rounded-xl p-3 shadow-sm flex items-center justify-between gap-2">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                  <Box className="w-5 h-5" />
+                <div className="w-12 h-12 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 overflow-hidden">
+                  {m.baseImageUrl ? <img src={resolveImageUrl(m.baseImageUrl)} alt="" className="w-full h-full object-cover" /> : <Box className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0">
                   <div className="font-medium text-sm text-zinc-900 truncate">{m.phoneName}</div>

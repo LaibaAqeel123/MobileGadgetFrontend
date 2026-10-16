@@ -79,8 +79,10 @@ export async function reinspectGlb(glbUrl, printMaterialName) {
 
 /// Creates (no id) or updates (with id) a 3D model. Unlike the 2D saves above, the server's own
 /// reason is passed through, because for 3D it is meaningful to the admin ("no PRINT_AREA found").
-export async function saveModel3D({ id, phoneName, caseType, glbUrl, printMaterialName }) {
-  const payload = { phoneName, caseType, poseType: POSE_MODEL3D, glbUrl, printMaterialName }
+/// baseImageUrl is the model's list thumbnail (the 2D models use that field for their photo; a 3D model
+/// has no photo, so its thumbnail lives there). Always sent, because an update overwrites it.
+export async function saveModel3D({ id, phoneName, caseType, glbUrl, printMaterialName, baseImageUrl = '' }) {
+  const payload = { phoneName, caseType, poseType: POSE_MODEL3D, glbUrl, printMaterialName, baseImageUrl }
   const res = await apiFetch(id ? `/api/heromodels/${id}` : '/api/heromodels', {
     method: id ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
